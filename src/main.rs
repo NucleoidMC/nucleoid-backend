@@ -9,7 +9,7 @@ use xtra::spawn::Spawner;
 pub use controller::*;
 pub use persistent::*;
 
-// mod web;
+mod web;
 mod integrations;
 mod discord;
 mod model;
@@ -65,8 +65,9 @@ async fn main() {
         .create(None)
         .spawn(&mut TokioGlobal);
 
-    let _ = futures::future::join(
+    let _ = futures::future::join3(
         tokio::spawn(integrations::run(controller.clone(), config.clone())),
         tokio::spawn(discord::run(controller.clone(), config.clone())),
+        tokio::spawn(web::run(controller.clone(), config.clone())),
     ).await;
 }

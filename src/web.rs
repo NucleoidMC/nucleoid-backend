@@ -1,37 +1,27 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use warp::Filter;
+use warp::http::StatusCode;
 use xtra::prelude::*;
 
-use crate::{Config, Controller};
+use crate::Config;
+use crate::controller::*;
 
-pub struct WebController {
-    controller: Option<Address<Controller>>,
-}
+pub async fn run(controller: Address<Controller>, config: Config) {
+    let status = warp::path("status")
+        .and(warp::path::param())
+        .and_then({
+            let controller = controller.clone();
+            move |channel| get_status(controller.clone(), channel)
+        });
 
-impl Actor for WebController {
-}
-
-pub struct Start(pub Address<Controller>);
-
-impl Message for Start {
-    type Result = ();
-}
-
-#[async_trait]
-impl Handler<Start> for WebController {
-    async fn handle(&mut self, start: Start, ctx: &mut Context<Self>) {
-        let controller = start.0;
-        self.controller = Some(controller);
-    }
-}
-
-pub async fn run(controller: Arc<Controller>) {
-    let hello = warp::path!("hello" / String)
-        .map(|name| format!("Hello, {}!", name));
-
-    warp::serve(hello)
-        .run(([127, 0, 0, 1], controller.config.web_server_port))
+    warp::serve(status)
+        .run(([127, 0, 0, 1], config.web_server_port))
         .await;
+}
+
+async fn get_status(controller: Address<Controller>, channel: String) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
+    match controller.send(GetStatus(channel)).await {
+        Ok(status) => Ok(Box::new(warp::reply::json(&status))),
+        Err(err) => Ok(Box::new(warp::reply::with_status(format!("{:?}", err), StatusCode::INTERNAL_SERVER_ERROR))),
+    }
 }

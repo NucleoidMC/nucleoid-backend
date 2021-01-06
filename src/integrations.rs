@@ -137,7 +137,8 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         self.controller.do_send_async(incoming_chat).await
                     }
                     Status { games, players } => {
-                        let status_update = StatusUpdate { channel: self.channel.clone(), games, players };
+                        let status = ServerStatus { games, players };
+                        let status_update = StatusUpdate { channel: self.channel.clone(), status };
                         self.controller.do_send_async(status_update).await
                     }
                     _ => {

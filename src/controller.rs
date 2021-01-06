@@ -7,12 +7,14 @@ use crate::Config;
 use crate::discord::{self, DiscordClient};
 use crate::integrations::{self, IntegrationsClient};
 use crate::model::*;
+use crate::web;
 
 // TODO: use numerical channel ids internally?
 pub struct Controller {
     config: Config,
     discord: Option<Address<DiscordClient>>,
     integration_clients: HashMap<String, Address<IntegrationsClient>>,
+    status_by_channel: HashMap<String, ServerStatus>,
 }
 
 impl Controller {
@@ -21,6 +23,7 @@ impl Controller {
             config,
             discord: None,
             integration_clients: HashMap::new(),
+            status_by_channel: HashMap::new(),
         }
     }
 }
@@ -80,12 +83,17 @@ impl Message for OutgoingChat {
 
 pub struct StatusUpdate {
     pub channel: String,
-    pub games: Vec<Game>,
-    pub players: Vec<Player>,
+    pub status: ServerStatus,
 }
 
 impl Message for StatusUpdate {
     type Result = ();
+}
+
+pub struct GetStatus(pub String);
+
+impl Message for GetStatus {
+    type Result = ServerStatus;
 }
 
 #[async_trait]
@@ -125,7 +133,7 @@ impl Handler<IncomingChat> for Controller {
             let _ = discord.do_send_async(discord::SendChat {
                 channel: message.channel,
                 sender: message.sender,
-                content: message.content
+                content: message.content,
             }).await;
         }
     }
@@ -146,6 +154,15 @@ impl Handler<OutgoingChat> for Controller {
 #[async_trait]
 impl Handler<StatusUpdate> for Controller {
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
-        println!("[{}] {} games, {} players", message.channel, message.games.len(), message.players.len());
+        println!("[{}] {} games, {} players", message.channel, message.status.games.len(), message.status.players.len());
+        self.status_by_channel.insert(message.channel, message.status);
+    }
+}
+
+#[async_trait]
+impl Handler<GetStatus> for Controller {
+    async fn handle(&mut self, message: GetStatus, _ctx: &mut Context<Self>) -> ServerStatus {
+        self.status_by_channel.get(&message.0).cloned()
+            .unwrap_or(ServerStatus::default())
     }
 }
