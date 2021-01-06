@@ -150,6 +150,9 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                     ctx.stop();
                 }
             }
+            Err(Error::Json(err)) => {
+                warn!("malformed message from client: {:?}", err);
+            }
             Err(err) => {
                 error!("integrations client closing with error: {:?}", err);
                 ctx.stop();

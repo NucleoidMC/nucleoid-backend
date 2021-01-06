@@ -9,6 +9,7 @@ pub struct Player {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Game {
     pub name: String,
-    pub type_id: String,
+    #[serde(rename = "type")]
+    pub ty: String,
     pub player_count: u16,
 }
