@@ -38,11 +38,11 @@ pub async fn run(controller: Address<Controller>, config: Config) {
     }
 }
 
-async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut S) -> Result<String> {
+async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut S) -> Result<(String, String)> {
     match stream.next().await {
         Some(HandleIncomingMessage(result)) => {
             match result {
-                Ok(IncomingMessage::Handshake { channel }) => Ok(channel),
+                Ok(IncomingMessage::Handshake { channel, game_version }) => Ok((channel, game_version)),
                 Ok(_) => Err(Error::MissingHandshake),
                 Err(err) => Err(err),
             }
@@ -53,7 +53,7 @@ async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut
 
 async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Result<()> {
     let (sink, mut stream) = split_framed(stream);
-    let channel = handshake(&mut stream).await?;
+    let (channel, game_version) = handshake(&mut stream).await?;
 
     info!("received handshake for: {}", channel);
 
@@ -65,7 +65,7 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
 
     let client = client.create(None).spawn(&mut TokioGlobal);
 
-    controller.do_send_async(RegisterIntegrationsClient { channel, client: client.clone() }).await
+    controller.do_send_async(RegisterIntegrationsClient { channel, game_version, client: client.clone() }).await
         .expect("controller disconnected");
 
     Ok(client.attach_stream(stream).await)
@@ -92,6 +92,7 @@ pub enum IncomingMessage {
     #[serde(rename = "handshake")]
     Handshake {
         channel: String,
+        game_version: String,
     },
     #[serde(rename = "chat")]
     Chat {
@@ -104,9 +105,7 @@ pub enum IncomingMessage {
         players: Vec<Player>,
     },
     #[serde(rename = "lifecycle_start")]
-    LifecycleStart {
-        game_version: String
-    },
+    LifecycleStart {},
     #[serde(rename = "lifecycle_stop")]
     LifecycleStop {},
 }
@@ -148,8 +147,8 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         let status_update = StatusUpdate { channel: self.channel.clone(), games, players };
                         self.controller.do_send_async(status_update).await
                     }
-                    LifecycleStart { game_version } => {
-                        let lifecycle = ServerLifecycleStart { channel: self.channel.clone(), game_version };
+                    LifecycleStart { } => {
+                        let lifecycle = ServerLifecycleStart { channel: self.channel.clone() };
                         self.controller.do_send_async(lifecycle).await
                     }
                     LifecycleStop { } => {

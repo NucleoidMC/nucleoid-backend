@@ -1,4 +1,3 @@
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -8,7 +7,6 @@ use crate::Config;
 use crate::discord::{self, DiscordClient};
 use crate::integrations::{self, IntegrationsClient};
 use crate::model::*;
-use crate::web;
 
 // TODO: use numerical channel ids internally?
 pub struct Controller {
@@ -33,6 +31,7 @@ impl Actor for Controller {}
 
 pub struct RegisterIntegrationsClient {
     pub channel: String,
+    pub game_version: String,
     pub client: Address<IntegrationsClient>,
 }
 
@@ -95,7 +94,6 @@ impl Message for StatusUpdate {
 
 pub struct ServerLifecycleStart {
     pub channel: String,
-    pub game_version: String,
 }
 
 impl Message for ServerLifecycleStart {
@@ -119,7 +117,11 @@ impl Message for GetStatus {
 #[async_trait]
 impl Handler<RegisterIntegrationsClient> for Controller {
     async fn handle(&mut self, message: RegisterIntegrationsClient, _ctx: &mut Context<Self>) {
-        self.integration_clients.insert(message.channel, message.client);
+        self.integration_clients.insert(message.channel.clone(), message.client);
+
+        let status = self.status_by_channel.entry(message.channel)
+            .or_insert_with(|| ServerStatus::default());
+        status.game_version = message.game_version;
     }
 }
 
@@ -187,18 +189,14 @@ impl Handler<StatusUpdate> for Controller {
 #[async_trait]
 impl Handler<ServerLifecycleStart> for Controller {
     async fn handle(&mut self, message: ServerLifecycleStart, _ctx: &mut Context<Self>) {
-        println!("[{}] started @ {}", message.channel, message.game_version);
+        println!("[{}] started", message.channel);
 
         if let Some(discord) = &self.discord {
             let _ = discord.do_send_async(discord::SendSystem {
-                channel: message.channel.clone(),
-                content: format!("Server has started on **{}**!", message.game_version),
+                channel: message.channel,
+                content: format!("Server has started!"),
             }).await;
         }
-
-        let status = self.status_by_channel.entry(message.channel)
-            .or_insert_with(|| ServerStatus::default());
-        status.game_version = message.game_version;
     }
 }
 

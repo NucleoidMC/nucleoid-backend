@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use warp::Filter;
 use warp::http::StatusCode;
 use xtra::prelude::*;
