@@ -19,6 +19,7 @@ use xtra::prelude::*;
 use crate::{Config, Persistent, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
+use serenity::model::id::ChannelId;
 
 struct RelayStateKey;
 
@@ -141,6 +142,15 @@ impl XtraMessage for SendChat {
     type Result = ();
 }
 
+pub struct SendSystem {
+    pub channel: String,
+    pub content: String,
+}
+
+impl XtraMessage for SendSystem {
+    type Result = ();
+}
+
 #[async_trait]
 impl Handler<Init> for DiscordClient {
     async fn handle(&mut self, message: Init, _ctx: &mut XtraContext<Self>) {
@@ -162,6 +172,21 @@ impl Handler<SendChat> for DiscordClient {
                     webhook.username(message.sender.name)
                         .avatar_url(format!("https://minotar.net/helm/{}/64", message.sender.id.replace("-", "")))
                         .content(message.content)
+                }).await;
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<SendSystem> for DiscordClient {
+    async fn handle(&mut self, message: SendSystem, _ctx: &mut XtraContext<Self>) {
+        if let (Some(cache_and_http), Some(data)) = (&self.cache_and_http, &self.data) {
+            let data = data.read().await;
+            let relay_state = data.get::<RelayStateKey>().unwrap();
+            if let Some(relay) = relay_state.channel_to_relay.get(&message.channel) {
+                let _ = ChannelId(relay.discord_channel).send_message(&cache_and_http.http, move |m| {
+                    m.content(message.content).allowed_mentions(|m| m.empty_parse())
                 }).await;
             }
         }

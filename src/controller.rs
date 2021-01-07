@@ -91,6 +91,23 @@ impl Message for StatusUpdate {
     type Result = ();
 }
 
+pub struct ServerLifecycleStart {
+    pub channel: String,
+    pub game_version: String,
+}
+
+impl Message for ServerLifecycleStart {
+    type Result = ();
+}
+
+pub struct ServerLifecycleStop {
+    pub channel: String,
+}
+
+impl Message for ServerLifecycleStop {
+    type Result = ();
+}
+
 pub struct GetStatus(pub String);
 
 impl Message for GetStatus {
@@ -158,6 +175,35 @@ impl Handler<StatusUpdate> for Controller {
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
         println!("[{}] {} games, {} players", message.channel, message.status.games.len(), message.status.players.len());
         self.status_by_channel.insert(message.channel, message.status);
+    }
+}
+
+#[async_trait]
+impl Handler<ServerLifecycleStart> for Controller {
+    async fn handle(&mut self, message: ServerLifecycleStart, _ctx: &mut Context<Self>) {
+        println!("[{}] started @ {}", message.channel, message.game_version);
+
+        if let Some(discord) = &self.discord {
+            let _ = discord.do_send_async(discord::SendSystem {
+                channel: message.channel,
+                content: format!("Server has started on **{}**!", message.game_version),
+            }).await;
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<ServerLifecycleStop> for Controller {
+    async fn handle(&mut self, message: ServerLifecycleStop, _ctx: &mut Context<Self>) {
+        println!("[{}] stopped", message.channel);
+        self.status_by_channel.remove(&message.channel);
+
+        if let Some(discord) = &self.discord {
+            let _ = discord.do_send_async(discord::SendSystem {
+                channel: message.channel,
+                content: "Server has stopped!".to_owned(),
+            }).await;
+        }
     }
 }
 

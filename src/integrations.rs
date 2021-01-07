@@ -8,12 +8,12 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::net::{TcpListener, TcpStream};
+use xtra::KeepRunning;
 use xtra::prelude::*;
 
 use crate::{Config, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
-use xtra::KeepRunning;
 
 const MAX_FRAME_LENGTH: usize = 4 * 1024 * 1024;
 const FRAME_HEADER_SIZE: usize = 4;
@@ -103,6 +103,12 @@ pub enum IncomingMessage {
         games: Vec<Game>,
         players: Vec<Player>,
     },
+    #[serde(rename = "lifecycle_start")]
+    LifecycleStart {
+        game_version: String
+    },
+    #[serde(rename = "lifecycle_stop")]
+    LifecycleStop {},
 }
 
 #[derive(Serialize, Debug)]
@@ -142,6 +148,14 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         let status = ServerStatus { games, players };
                         let status_update = StatusUpdate { channel: self.channel.clone(), status };
                         self.controller.do_send_async(status_update).await
+                    }
+                    LifecycleStart { game_version } => {
+                        let lifecycle = ServerLifecycleStart { channel: self.channel.clone(), game_version };
+                        self.controller.do_send_async(lifecycle).await
+                    }
+                    LifecycleStop { } => {
+                        let lifecycle = ServerLifecycleStop { channel: self.channel.clone() };
+                        self.controller.do_send_async(lifecycle).await
                     }
                     _ => {
                         warn!("received unexpected message from integrations client: {:?}", message);
