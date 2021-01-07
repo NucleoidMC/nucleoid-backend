@@ -7,6 +7,9 @@ use crate::Config;
 use crate::controller::*;
 
 pub async fn run(controller: Address<Controller>, config: Config) {
+    let cors = warp::cors()
+        .allow_any_origin();
+
     let status = warp::path("status")
         .and(warp::path::param())
         .and_then({
@@ -14,7 +17,7 @@ pub async fn run(controller: Address<Controller>, config: Config) {
             move |channel| get_status(controller.clone(), channel)
         });
 
-    warp::serve(status)
+    warp::serve(status.with(cors))
         .run(([127, 0, 0, 1], config.web_server_port))
         .await;
 }
