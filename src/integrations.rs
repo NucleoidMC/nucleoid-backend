@@ -112,6 +112,8 @@ pub enum OutgoingMessage {
     Chat {
         sender: String,
         content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name_color: Option<u32>,
     }
 }
 

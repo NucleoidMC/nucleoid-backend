@@ -75,6 +75,7 @@ pub struct OutgoingChat {
     pub channel: String,
     pub sender: String,
     pub content: String,
+    pub name_color: Option<u32>,
 }
 
 impl Message for OutgoingChat {
@@ -146,6 +147,7 @@ impl Handler<OutgoingChat> for Controller {
             let _ = integrations.do_send_async(integrations::OutgoingMessage::Chat {
                 sender: message.sender,
                 content: message.content,
+                name_color: message.name_color,
             }).await;
         }
     }

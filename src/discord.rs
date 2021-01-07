@@ -254,12 +254,27 @@ impl DiscordHandler {
         let relay_state = data.get::<RelayStateKey>().unwrap();
         if let Some(channel) = relay_state.discord_to_channel.get(&message.channel_id.0) {
             let sender_name = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
+
+            let name_color = self.get_sender_name_color(ctx, message).await;
+
             self.controller.do_send_async(OutgoingChat {
                 channel: channel.clone(),
                 sender: sender_name,
                 content: message.content_safe(&ctx.cache).await,
+                name_color
             }).await.expect("controller disconnected");
         }
+    }
+
+    async fn get_sender_name_color(&self, ctx: &SerenityContext, message: &SerenityMessage) -> Option<u32> {
+        if let (Some(member), Some(guild)) = (&message.member, message.guild_id) {
+            for role in &member.roles {
+                if let Some(role) = ctx.cache.role(guild, role).await {
+                    return Some(role.colour.0);
+                }
+            }
+        }
+        return None;
     }
 }
 
