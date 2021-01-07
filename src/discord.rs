@@ -9,6 +9,7 @@ use serenity::CacheAndHttp;
 use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Channel, Message as SerenityMessage, ReactionType};
+use serenity::model::id::ChannelId;
 use serenity::model::webhook::Webhook;
 use serenity::prelude::*;
 use xtra::Context as XtraContext;
@@ -19,7 +20,6 @@ use xtra::prelude::*;
 use crate::{Config, Persistent, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
-use serenity::model::id::ChannelId;
 
 struct RelayStateKey;
 
@@ -286,20 +286,22 @@ impl DiscordHandler {
                 channel: channel.clone(),
                 sender: sender_name,
                 content: message.content_safe(&ctx.cache).await,
-                name_color
+                name_color,
             }).await.expect("controller disconnected");
         }
     }
 
     async fn get_sender_name_color(&self, ctx: &SerenityContext, message: &SerenityMessage) -> Option<u32> {
         if let (Some(member), Some(guild)) = (&message.member, message.guild_id) {
-            for role in &member.roles {
-                if let Some(role) = ctx.cache.role(guild, role).await {
-                    return Some(role.colour.0);
-                }
+            if let Some(guild) = ctx.cache.guild(guild).await {
+                return member.roles.iter()
+                    .filter_map(|id| guild.roles.get(id))
+                    .filter(|role| role.colour.0 != 0)
+                    .max_by_key(|role| role.position)
+                    .map(|role| role.colour.0);
             }
         }
-        return None;
+        None
     }
 }
 
