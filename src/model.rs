@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ServerStatus {
+    pub game_version: String,
     pub games: Vec<Game>,
     pub players: Vec<Player>,
 }

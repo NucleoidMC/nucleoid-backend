@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -84,7 +85,8 @@ impl Message for OutgoingChat {
 
 pub struct StatusUpdate {
     pub channel: String,
-    pub status: ServerStatus,
+    pub games: Vec<Game>,
+    pub players: Vec<Player>,
 }
 
 impl Message for StatusUpdate {
@@ -173,8 +175,12 @@ impl Handler<OutgoingChat> for Controller {
 #[async_trait]
 impl Handler<StatusUpdate> for Controller {
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
-        println!("[{}] {} games, {} players", message.channel, message.status.games.len(), message.status.players.len());
-        self.status_by_channel.insert(message.channel, message.status);
+        println!("[{}] {} games, {} players", message.channel, message.games.len(), message.players.len());
+
+        let status = self.status_by_channel.entry(message.channel)
+            .or_insert_with(|| ServerStatus::default());
+        status.games = message.games;
+        status.players = message.players;
     }
 }
 
@@ -185,10 +191,14 @@ impl Handler<ServerLifecycleStart> for Controller {
 
         if let Some(discord) = &self.discord {
             let _ = discord.do_send_async(discord::SendSystem {
-                channel: message.channel,
+                channel: message.channel.clone(),
                 content: format!("Server has started on **{}**!", message.game_version),
             }).await;
         }
+
+        let status = self.status_by_channel.entry(message.channel)
+            .or_insert_with(|| ServerStatus::default());
+        status.game_version = message.game_version;
     }
 }
 
