@@ -22,6 +22,7 @@ use xtra::prelude::*;
 use crate::{DiscordConfig, Persistent, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
+use serenity::builder::ParseValue;
 
 const MESSAGE_LENGTH_LIMIT: usize = 2000;
 
@@ -278,7 +279,7 @@ impl Handler<SendPing> for DiscordClient {
                         // TODO: return error?
                         let message = channel.send_message(&cache_and_http.http, move |message| {
                             message.content(format!("{}: {}", role.mention(), send_ping.content))
-                                .allowed_mentions(|m| m.roles(&[role]))
+                                .allowed_mentions(|m| m.empty_parse().roles(&[role]))
                         }).await;
 
                         if let Ok(message) = message {
