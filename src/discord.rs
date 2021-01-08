@@ -1,15 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use log::{error, info};
+use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
 use serenity::CacheAndHttp;
 use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Channel, Message as SerenityMessage, ReactionType};
-use serenity::model::id::ChannelId;
+use serenity::model::id::{ChannelId, MessageId, RoleId};
 use serenity::model::webhook::Webhook;
 use serenity::prelude::*;
 use xtra::Context as XtraContext;
@@ -17,23 +19,25 @@ use xtra::KeepRunning;
 use xtra::Message as XtraMessage;
 use xtra::prelude::*;
 
-use crate::{Config, Persistent, TokioGlobal};
+use crate::{DiscordConfig, Persistent, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
 
-struct RelayStateKey;
+const MESSAGE_LENGTH_LIMIT: usize = 2000;
 
-impl TypeMapKey for RelayStateKey {
-    type Value = Persistent<RelayState>;
+struct RelayStoreKey;
+
+impl TypeMapKey for RelayStoreKey {
+    type Value = Persistent<RelayStore>;
 }
 
 #[derive(Debug, Default)]
-struct RelayState {
+struct RelayStore {
     channel_to_relay: HashMap<String, ChannelRelay>,
     discord_to_channel: HashMap<u64, String>,
 }
 
-impl RelayState {
+impl RelayStore {
     pub fn insert_relay(&mut self, channel: String, relay: ChannelRelay) {
         self.discord_to_channel.insert(relay.discord_channel, channel.clone());
         self.channel_to_relay.insert(channel, relay);
@@ -50,20 +54,65 @@ impl RelayState {
     }
 }
 
-impl Serialize for RelayState {
+impl Serialize for RelayStore {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.channel_to_relay.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for RelayState {
+impl<'de> Deserialize<'de> for RelayStore {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let channel_to_relay: HashMap<String, ChannelRelay> = HashMap::deserialize(deserializer)?;
         let mut discord_to_channel = HashMap::new();
         for (channel, relay) in &channel_to_relay {
             discord_to_channel.insert(relay.discord_channel, channel.clone());
         }
-        Ok(RelayState { channel_to_relay, discord_to_channel })
+        Ok(RelayStore { channel_to_relay, discord_to_channel })
+    }
+}
+
+struct PingStoreKey;
+
+impl TypeMapKey for PingStoreKey {
+    type Value = Persistent<PingStore>;
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(transparent)]
+struct PingStore {
+    pings: HashMap<String, Ping>,
+}
+
+impl PingStore {
+    fn ping_for_channel(&self, ping: &str, channel: ChannelId) -> Option<&Ping> {
+        self.pings.get(ping).filter(|ping| ping.discord_channel == channel.0)
+    }
+
+    fn ping_for_channel_mut(&mut self, ping: &str, channel: ChannelId) -> Option<&mut Ping> {
+        self.pings.get_mut(ping).filter(|ping| ping.discord_channel == channel.0)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Ping {
+    discord_channel: u64,
+    discord_role: u64,
+    last_message: Option<u64>,
+    last_ping_time: SystemTime,
+    allowed_roles: HashSet<u64>,
+}
+
+impl Ping {
+    fn try_new_ping(&mut self, config: &DiscordConfig) -> bool {
+        let now = SystemTime::now();
+        let interval = Duration::from_secs(config.ping_interval_minutes as u64 * 60);
+        match now.duration_since(self.last_ping_time) {
+            Ok(duration) if duration > interval => {
+                self.last_ping_time = now;
+                true
+            },
+            _ => false
+        }
     }
 }
 
@@ -75,6 +124,7 @@ struct ChannelRelay {
 
 pub struct DiscordClient {
     controller: Address<Controller>,
+    config: DiscordConfig,
     cache_and_http: Option<Arc<CacheAndHttp>>,
     data: Option<Arc<RwLock<TypeMap>>>,
 }
@@ -87,29 +137,30 @@ impl Actor for DiscordClient {
     }
 }
 
-pub async fn run(controller: Address<Controller>, config: Config) {
-    let token = config.discord_token;
-    if token.is_empty() {
-        return;
-    }
+pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
+    let relay_store = Persistent::open("relay.json").await;
+    let ping_store = Persistent::open("pings.json").await;
 
-    let relay_state = Persistent::open("relay.json").await;
     let actor = DiscordClient {
         controller: controller.clone(),
+        config: config.clone(),
         cache_and_http: None,
         data: None,
     };
     let address = actor.create(None).spawn(&mut TokioGlobal);
 
-    let mut client = Client::builder(token)
-        .event_handler(DiscordHandler { controller: controller.clone() })
+    let handler = DiscordHandler { controller: controller.clone(), discord: address.clone() };
+
+    let mut client = Client::builder(config.token)
+        .event_handler(handler)
         .intents(GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS)
         .await
         .expect("failed to create client");
 
     {
         let mut data = client.data.write().await;
-        data.insert::<RelayStateKey>(relay_state);
+        data.insert::<RelayStoreKey>(relay_store);
+        data.insert::<PingStoreKey>(ping_store);
     }
 
     address.do_send_async(Init {
@@ -151,6 +202,15 @@ impl XtraMessage for SendSystem {
     type Result = ();
 }
 
+pub struct SendPing {
+    pub ping: String,
+    pub content: String,
+}
+
+impl XtraMessage for SendPing {
+    type Result = ();
+}
+
 #[async_trait]
 impl Handler<Init> for DiscordClient {
     async fn handle(&mut self, message: Init, _ctx: &mut XtraContext<Self>) {
@@ -161,17 +221,17 @@ impl Handler<Init> for DiscordClient {
 
 #[async_trait]
 impl Handler<SendChat> for DiscordClient {
-    async fn handle(&mut self, message: SendChat, _ctx: &mut XtraContext<Self>) {
+    async fn handle(&mut self, send_chat: SendChat, _ctx: &mut XtraContext<Self>) {
         if let (Some(cache_and_http), Some(data)) = (&self.cache_and_http, &self.data) {
             let data = data.read().await;
-            let relay_state = data.get::<RelayStateKey>().unwrap();
-            if let Some(relay) = relay_state.channel_to_relay.get(&message.channel) {
+            let relay_store = data.get::<RelayStoreKey>().unwrap();
+            if let Some(relay) = relay_store.channel_to_relay.get(&send_chat.channel) {
                 let _ = relay.webhook.execute(&cache_and_http.http, false, move |webhook| {
                     webhook.0.insert("allowed_mentions", json!({"parse": []}));
                     // TODO: configurable url
-                    webhook.username(message.sender.name)
-                        .avatar_url(format!("https://minotar.net/helm/{}/64", message.sender.id.replace("-", "")))
-                        .content(message.content)
+                    webhook.username(send_chat.sender.name)
+                        .avatar_url(format!("https://minotar.net/helm/{}/64", send_chat.sender.id.replace("-", "")))
+                        .content(send_chat.content)
                 }).await;
             }
         }
@@ -180,21 +240,81 @@ impl Handler<SendChat> for DiscordClient {
 
 #[async_trait]
 impl Handler<SendSystem> for DiscordClient {
-    async fn handle(&mut self, message: SendSystem, _ctx: &mut XtraContext<Self>) {
+    async fn handle(&mut self, send_system: SendSystem, _ctx: &mut XtraContext<Self>) {
         if let (Some(cache_and_http), Some(data)) = (&self.cache_and_http, &self.data) {
             let data = data.read().await;
-            let relay_state = data.get::<RelayStateKey>().unwrap();
-            if let Some(relay) = relay_state.channel_to_relay.get(&message.channel) {
-                let _ = ChannelId(relay.discord_channel).send_message(&cache_and_http.http, move |m| {
-                    m.content(message.content).allowed_mentions(|m| m.empty_parse())
+            let relay_store = data.get::<RelayStoreKey>().unwrap();
+            if let Some(relay) = relay_store.channel_to_relay.get(&send_system.channel) {
+                let _ = ChannelId(relay.discord_channel).send_message(&cache_and_http.http, move |message| {
+                    message.content(send_system.content).allowed_mentions(|m| m.empty_parse())
                 }).await;
             }
         }
     }
 }
 
+#[async_trait]
+impl Handler<SendPing> for DiscordClient {
+    async fn handle(&mut self, send_ping: SendPing, _ctx: &mut XtraContext<Self>) {
+        if let (Some(cache_and_http), Some(data)) = (self.cache_and_http.clone(), self.data.clone()) {
+            let mut data = data.write().await;
+            let ping_store = data.get_mut::<PingStoreKey>().unwrap();
+
+            // horrible solution to work around not having async closures
+            {
+                let ping_store = ping_store.get_mut_unchecked();
+
+                if let Some(ping) = ping_store.pings.get_mut(&send_ping.ping) {
+                    let channel = ChannelId(ping.discord_channel);
+                    let role = RoleId(ping.discord_role);
+
+                    let append_message = ping.last_message.filter(|_| !ping.try_new_ping(&self.config));
+                    let append_message = match append_message {
+                        Some(append_message) => self.try_append(&cache_and_http, channel, MessageId(append_message), &send_ping.content).await.ok(),
+                        None => None,
+                    };
+
+                    if append_message.is_none() {
+                        // TODO: return error?
+                        let message = channel.send_message(&cache_and_http.http, move |message| {
+                            message.content(format!("{}: {}", role.mention(), send_ping.content))
+                                .allowed_mentions(|m| m.roles(&[role]))
+                        }).await;
+
+                        if let Ok(message) = message {
+                            ping.last_message = Some(message.id.0);
+                        }
+                    }
+                }
+            }
+
+            ping_store.flush().await;
+        }
+    }
+}
+
+impl DiscordClient {
+    async fn try_append(&mut self, cache_and_http: &CacheAndHttp, channel: ChannelId, message: MessageId, content: &str) -> Result<SerenityMessage, ()> {
+        match cache_and_http.http.get_message(channel.0, message.0).await {
+            Ok(mut message) => {
+                let new_content = format!("{}\n\n{}", message.content, content);
+                if new_content.len() < MESSAGE_LENGTH_LIMIT {
+                    let result = message.edit(&cache_and_http, |message| {
+                        message.content(new_content)
+                    }).await;
+                    result.map(|_| message).map_err(|_| ())
+                } else {
+                    Err(())
+                }
+            }
+            Err(_) => Err(()),
+        }
+    }
+}
+
 struct DiscordHandler {
     controller: Address<Controller>,
+    discord: Address<DiscordClient>,
 }
 
 impl DiscordHandler {
@@ -204,10 +324,15 @@ impl DiscordHandler {
         }
 
         let result = match tokens {
-            [_, "relay", "connect", channel] => self.connect_relay(channel, ctx, message).await,
-            [_, "relay", "disconnect"] => self.disconnect_relay(ctx, message).await,
-            [_, "status", "set", channel] => self.set_status_channel(channel, ctx, message).await,
-            [_, "status", "remove"] => self.remove_status_channel(ctx, message).await,
+            ["relay", "connect", channel] => self.connect_relay(channel, ctx, message).await,
+            ["relay", "disconnect"] => self.disconnect_relay(ctx, message).await,
+            ["status", "set", channel] => self.set_status_channel(channel, ctx, message).await,
+            ["status", "remove"] => self.remove_status_channel(ctx, message).await,
+            ["ping", "add", ping, role] => self.add_ping(ctx, message, ping, role).await,
+            ["ping", "remove", ping] => self.remove_ping(ctx, message, ping).await,
+            ["ping", "allow", ping, role] => self.allow_ping_for_role(ctx, message, ping, role).await,
+            ["ping", "disallow", ping, role] => self.disallow_ping_for_role(ctx, message, ping, role).await,
+            ["ping", "request", ping, ..] => self.request_ping(ctx, message, ping).await,
             _ => Err(CommandError::InvalidCommand),
         };
 
@@ -222,8 +347,8 @@ impl DiscordHandler {
     async fn connect_relay(&self, channel: &str, ctx: &SerenityContext, message: &SerenityMessage) -> CommandResult {
         let mut data = ctx.data.write().await;
 
-        let relay_state = data.get_mut::<RelayStateKey>().unwrap();
-        if relay_state.channel_to_relay.contains_key(channel) {
+        let relay_store = data.get_mut::<RelayStoreKey>().unwrap();
+        if relay_store.channel_to_relay.contains_key(channel) {
             return Err(CommandError::ChannelAlreadyConnected);
         }
 
@@ -236,23 +361,23 @@ impl DiscordHandler {
                     webhook,
                 };
 
-                relay_state.write(move |relay_state| {
-                    relay_state.insert_relay(channel.to_owned(), relay);
+                relay_store.write(move |relay_store| {
+                    relay_store.insert_relay(channel.to_owned(), relay);
                 }).await;
 
                 Ok(())
             }
-            _ => Err(CommandError::CannotConnectHere)
+            _ => Err(CommandError::CannotRunHere)
         }
     }
 
     async fn disconnect_relay(&self, ctx: &SerenityContext, message: &SerenityMessage) -> CommandResult {
         let mut data = ctx.data.write().await;
 
-        let relay_state = data.get_mut::<RelayStateKey>().unwrap();
+        let relay_store = data.get_mut::<RelayStoreKey>().unwrap();
 
-        let (_, relay) = relay_state.write(|relay_state| {
-            match relay_state.remove_relay(message.channel_id.0) {
+        let (_, relay) = relay_store.write(|relay_store| {
+            match relay_store.remove_relay(message.channel_id.0) {
                 Some(channel) => Ok(channel),
                 None => Err(CommandError::ChannelNotConnected),
             }
@@ -273,11 +398,136 @@ impl DiscordHandler {
         Ok(())
     }
 
+    async fn add_ping(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str, role_id: &str) -> CommandResult {
+        let mut data = ctx.data.write().await;
+        let ping_store = data.get_mut::<PingStoreKey>().unwrap();
+
+        if let Some(guild) = message.guild(&ctx.cache).await {
+            let role_id = RoleId(role_id.parse::<u64>().map_err(|_| CommandError::InvalidRoleId)?);
+            if !guild.roles.contains_key(&role_id) {
+                return Err(CommandError::InvalidRoleId);
+            }
+
+            ping_store.write(|ping_store| {
+                let ping = ping.to_owned();
+                if !ping_store.pings.contains_key(&ping) {
+                    ping_store.pings.insert(ping, Ping {
+                        discord_channel: message.channel_id.0,
+                        discord_role: role_id.0,
+                        last_message: None,
+                        last_ping_time: SystemTime::now(),
+                        allowed_roles: HashSet::new(),
+                    });
+                    Ok(())
+                } else {
+                    Err(CommandError::PingAlreadyConnected)
+                }
+            }).await
+        } else {
+            Err(CommandError::CannotRunHere)
+        }
+    }
+
+    async fn remove_ping(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str) -> CommandResult {
+        let mut data = ctx.data.write().await;
+        let ping_store = data.get_mut::<PingStoreKey>().unwrap();
+
+        ping_store.write(|ping_store| {
+            if ping_store.ping_for_channel(ping, message.channel_id).is_none() {
+                return Err(CommandError::PingNotConnected);
+            }
+
+            match ping_store.pings.remove(ping) {
+                Some(_) => Ok(()),
+                None => Err(CommandError::PingNotConnected)
+            }
+        }).await
+    }
+
+    async fn allow_ping_for_role(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str, role: &str) -> CommandResult {
+        let role = role.parse::<u64>().map_err(|_| CommandError::InvalidRoleId)?;
+
+        let guild = message.guild(&ctx.cache).await.ok_or(CommandError::CannotRunHere)?;
+        if guild.roles.get(&RoleId(role)).is_none() {
+            return Err(CommandError::InvalidRoleId);
+        }
+
+        self.update_ping(ctx, message, ping, |ping| {
+            if ping.allowed_roles.insert(role) {
+                Ok(())
+            } else {
+                Err(CommandError::InvalidRoleId)
+            }
+        }).await
+    }
+
+    async fn disallow_ping_for_role(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str, role: &str) -> CommandResult {
+        let role = role.parse::<u64>().map_err(|_| CommandError::InvalidRoleId)?;
+
+        self.update_ping(ctx, message, ping, |ping| {
+            if ping.allowed_roles.remove(&role) {
+                Ok(())
+            } else {
+                Err(CommandError::InvalidRoleId)
+            }
+        }).await
+    }
+
+    async fn update_ping<F>(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str, f: F) -> CommandResult
+        where F: FnOnce(&mut Ping) -> CommandResult,
+    {
+        let mut data = ctx.data.write().await;
+        let ping_store = data.get_mut::<PingStoreKey>().unwrap();
+
+        ping_store.write(|ping_store| {
+            match ping_store.ping_for_channel_mut(ping, message.channel_id) {
+                Some(ping) => f(ping),
+                None => Err(CommandError::PingNotConnected),
+            }
+        }).await
+    }
+
+    async fn request_ping(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str) -> CommandResult {
+        let sender_roles = message.member.as_ref()
+            .map(|member| &member.roles)
+            .ok_or(CommandError::NotAllowed)?;
+
+        let data = ctx.data.read().await;
+        let ping_store = data.get::<PingStoreKey>().unwrap();
+
+        match ping_store.ping_for_channel(ping, message.channel_id) {
+            Some(ping) => {
+                let allowed = sender_roles.iter()
+                    .any(|role| ping.allowed_roles.contains(&role.0));
+                if !allowed {
+                    return Err(CommandError::NotAllowed);
+                }
+            }
+            None => return Err(CommandError::PingNotConnected),
+        };
+
+        let changelog = Regex::new("```\n(.*)\n```/s").unwrap();
+        let changelog = changelog.captures(&message.content)
+            .and_then(|captures| captures.get(1))
+            .map(|changelog| changelog.as_str());
+
+        match changelog {
+            Some(changelog) => {
+                let _ = self.discord.do_send_async(SendPing {
+                    ping: ping.to_owned(),
+                    content: changelog.to_owned(),
+                }).await;
+                Ok(())
+            }
+            None => Err(CommandError::MissingChangelog)
+        }
+    }
+
     async fn send_outgoing_chat(&self, ctx: &SerenityContext, message: &SerenityMessage) {
         let data = ctx.data.read().await;
 
-        let relay_state = data.get::<RelayStateKey>().unwrap();
-        if let Some(channel) = relay_state.discord_to_channel.get(&message.channel_id.0) {
+        let relay_store = data.get::<RelayStoreKey>().unwrap();
+        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
             let sender_name = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
 
             let name_color = self.get_sender_name_color(ctx, message).await;
@@ -310,7 +560,7 @@ impl EventHandler for DiscordHandler {
     async fn message(&self, ctx: SerenityContext, message: SerenityMessage) {
         if let Ok(true) = message.mentions_me(&ctx).await {
             let tokens: Vec<&str> = message.content.split_ascii_whitespace().collect();
-            self.handle_command(tokens.as_slice(), &ctx, &message).await;
+            self.handle_command(&tokens[1..], &ctx, &message).await;
         } else if !message.author.bot {
             self.send_outgoing_chat(&ctx, &message).await;
         }
@@ -340,8 +590,18 @@ enum CommandError {
     ChannelAlreadyConnected,
     #[error("This channel is not connected as a relay!")]
     ChannelNotConnected,
-    #[error("Cannot connect a relay here!")]
-    CannotConnectHere,
+    #[error("Cannot run this command here!")]
+    CannotRunHere,
     #[error("Invalid command!")]
     InvalidCommand,
+    #[error("This ping is already connected!")]
+    PingAlreadyConnected,
+    #[error("This ping is not connected here!")]
+    PingNotConnected,
+    #[error("Invalid role id!")]
+    InvalidRoleId,
+    #[error("Please provide changelog in a ```codeblock```")]
+    MissingChangelog,
+    #[error("You are not allowed to do this!")]
+    NotAllowed,
 }

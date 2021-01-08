@@ -17,7 +17,7 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn new(config: Config) -> Controller {
+    pub async fn new(config: Config) -> Controller {
         Controller {
             config,
             discord: None,

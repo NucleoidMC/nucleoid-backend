@@ -1,11 +1,9 @@
-use std::fs::File;
 use std::future::Future;
-use std::path::Path;
 
-use serde::{Deserialize, Serialize};
 use xtra::prelude::*;
 use xtra::spawn::Spawner;
 
+pub use config::*;
 pub use controller::*;
 pub use persistent::*;
 
@@ -15,38 +13,7 @@ mod discord;
 mod model;
 mod controller;
 mod persistent;
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Config {
-    pub web_server_port: u16,
-    pub integrations_port: u16,
-    pub discord_token: String,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            web_server_port: 25010,
-            integrations_port: 25020,
-            discord_token: String::new(),
-        }
-    }
-}
-
-fn load_config() -> Config {
-    let path = Path::new("config.json");
-    if path.exists() {
-        let mut file = File::open(path).expect("failed to open config");
-        serde_json::from_reader(&mut file).expect("failed to parse config")
-    } else {
-        let config = Config::default();
-
-        let mut file = File::create(path).expect("failed to create config");
-        serde_json::to_writer_pretty(&mut file, &config).expect("failed to write config");
-
-        config
-    }
-}
+mod config;
 
 pub struct TokioGlobal;
 
@@ -60,14 +27,24 @@ impl Spawner for TokioGlobal {
 async fn main() {
     env_logger::init();
 
-    let config = load_config();
-    let controller = Controller::new(config.clone())
+    let config = config::load();
+    let controller = Controller::new(config.clone()).await
         .create(None)
         .spawn(&mut TokioGlobal);
 
-    let _ = futures::future::join3(
-        tokio::spawn(integrations::run(controller.clone(), config.clone())),
-        tokio::spawn(discord::run(controller.clone(), config.clone())),
-        tokio::spawn(web::run(controller.clone(), config.clone())),
-    ).await;
+    let mut futures = Vec::with_capacity(3);
+
+    if let Some(integrations) = config.integrations {
+        futures.push(tokio::spawn(integrations::run(controller.clone(), integrations)));
+    }
+
+    if let Some(web) = config.web_server {
+        futures.push(tokio::spawn(web::run(controller.clone(), web)));
+    }
+
+    if let Some(discord) = config.discord {
+        futures.push(tokio::spawn(discord::run(controller.clone(), discord)));
+    }
+
+    let _ = futures::future::join_all(futures).await;
 }

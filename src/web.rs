@@ -2,10 +2,10 @@ use warp::Filter;
 use warp::http::StatusCode;
 use xtra::prelude::*;
 
-use crate::Config;
+use crate::WebServerConfig;
 use crate::controller::*;
 
-pub async fn run(controller: Address<Controller>, config: Config) {
+pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
     let cors = warp::cors()
         .allow_any_origin();
 
@@ -17,7 +17,7 @@ pub async fn run(controller: Address<Controller>, config: Config) {
         });
 
     warp::serve(status.with(cors))
-        .run(([127, 0, 0, 1], config.web_server_port))
+        .run(([127, 0, 0, 1], config.port))
         .await;
 }
 

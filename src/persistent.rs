@@ -5,12 +5,16 @@ use serde::{de::DeserializeOwned, Serialize};
 use tokio::fs::File;
 use tokio::prelude::*;
 
-pub struct Persistent<T: Serialize + DeserializeOwned + Default> {
+pub trait Persistable: Serialize + DeserializeOwned + Default {}
+
+impl<T: Serialize + DeserializeOwned + Default> Persistable for T {}
+
+pub struct Persistent<T: Persistable> {
     path: PathBuf,
     inner: T,
 }
 
-impl<T: Serialize + DeserializeOwned + Default> Persistent<T> {
+impl<T: Persistable> Persistent<T> {
     pub async fn open(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
 
@@ -33,13 +37,21 @@ impl<T: Serialize + DeserializeOwned + Default> Persistent<T> {
         where F: FnOnce(&mut T) -> R
     {
         let result = f(&mut self.inner);
+        self.flush().await;
+        result
+    }
 
+    // TODO: horrible solution to work around not having async closures
+    #[inline]
+    pub fn get_mut_unchecked(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
+    pub async fn flush(&mut self) {
         let mut file = File::create(&self.path).await.expect("failed to create persistent file");
 
         let bytes = serde_json::to_vec(&self.inner).expect("failed to serialize persistent file");
         file.write_all(&bytes).await.expect("failed to write to persistent file");
-
-        result
     }
 
     #[inline]
@@ -48,7 +60,7 @@ impl<T: Serialize + DeserializeOwned + Default> Persistent<T> {
     }
 }
 
-impl<T: Serialize + DeserializeOwned + Default> Deref for Persistent<T> {
+impl<T: Persistable> Deref for Persistent<T> {
     type Target = T;
 
     #[inline]

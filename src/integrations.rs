@@ -11,15 +11,15 @@ use tokio::net::{TcpListener, TcpStream};
 use xtra::KeepRunning;
 use xtra::prelude::*;
 
-use crate::{Config, TokioGlobal};
+use crate::{IntegrationsConfig, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
 
 const MAX_FRAME_LENGTH: usize = 4 * 1024 * 1024;
 const FRAME_HEADER_SIZE: usize = 4;
 
-pub async fn run(controller: Address<Controller>, config: Config) {
-    let mut listener = TcpListener::bind(&format!("127.0.0.1:{}", config.integrations_port)).await
+pub async fn run(controller: Address<Controller>, config: IntegrationsConfig) {
+    let mut listener = TcpListener::bind(&format!("127.0.0.1:{}", config.port)).await
         .expect("failed to open integrations listener");
 
     loop {
@@ -147,11 +147,11 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         let status_update = StatusUpdate { channel: self.channel.clone(), games, players };
                         self.controller.do_send_async(status_update).await
                     }
-                    LifecycleStart { } => {
+                    LifecycleStart {} => {
                         let lifecycle = ServerLifecycleStart { channel: self.channel.clone() };
                         self.controller.do_send_async(lifecycle).await
                     }
-                    LifecycleStop { } => {
+                    LifecycleStop {} => {
                         let lifecycle = ServerLifecycleStop { channel: self.channel.clone() };
                         self.controller.do_send_async(lifecycle).await
                     }

@@ -898,6 +898,7 @@ dependencies = [
  "env_logger",
  "futures",
  "log",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
