@@ -269,7 +269,8 @@ impl Handler<SendPing> for DiscordClient {
                     let channel = ChannelId(ping.discord_channel);
                     let role = RoleId(ping.discord_role);
 
-                    let append_message = ping.last_message.filter(|_| !ping.try_new_ping(&self.config));
+                    let new_ping = ping.try_new_ping(&self.config) || ping.last_message.is_none();
+                    let append_message = ping.last_message.filter(|_| !new_ping);
                     let append_message = match append_message {
                         Some(append_message) => self.try_append(&cache_and_http, channel, MessageId(append_message), &send_ping.content).await.ok(),
                         None => None,
@@ -278,7 +279,12 @@ impl Handler<SendPing> for DiscordClient {
                     if append_message.is_none() {
                         // TODO: return error?
                         let message = channel.send_message(&cache_and_http.http, move |message| {
-                            message.content(format!("{}: {}", role.mention(), send_ping.content))
+                            let content = if new_ping {
+                                format!("{}: {}", role.mention(), send_ping.content)
+                            } else {
+                                send_ping.content
+                            };
+                            message.content(content)
                                 .allowed_mentions(|m| m.empty_parse().roles(&[role]))
                         }).await;
 
