@@ -7,6 +7,7 @@ use log::{error, info};
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
+use serenity::builder::ParseValue;
 use serenity::CacheAndHttp;
 use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
@@ -22,7 +23,6 @@ use xtra::prelude::*;
 use crate::{DiscordConfig, Persistent, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
-use serenity::builder::ParseValue;
 
 const MESSAGE_LENGTH_LIMIT: usize = 2000;
 
@@ -111,7 +111,7 @@ impl Ping {
             Ok(duration) if duration > interval => {
                 self.last_ping_time = now;
                 true
-            },
+            }
             _ => false
         }
     }
@@ -326,19 +326,17 @@ struct DiscordHandler {
 
 impl DiscordHandler {
     async fn handle_command(&self, tokens: &[&str], ctx: &SerenityContext, message: &SerenityMessage) {
-        if !check_message_authorized(&ctx, &message).await {
-            return;
-        }
+        let admin = check_message_admin(&ctx, &message).await;
 
         let result = match tokens {
-            ["relay", "connect", channel] => self.connect_relay(channel, ctx, message).await,
-            ["relay", "disconnect"] => self.disconnect_relay(ctx, message).await,
-            ["status", "set", channel] => self.set_status_channel(channel, ctx, message).await,
-            ["status", "remove"] => self.remove_status_channel(ctx, message).await,
-            ["ping", "add", ping, role] => self.add_ping(ctx, message, ping, role).await,
-            ["ping", "remove", ping] => self.remove_ping(ctx, message, ping).await,
-            ["ping", "allow", ping, role] => self.allow_ping_for_role(ctx, message, ping, role).await,
-            ["ping", "disallow", ping, role] => self.disallow_ping_for_role(ctx, message, ping, role).await,
+            ["relay", "connect", channel] if admin => self.connect_relay(channel, ctx, message).await,
+            ["relay", "disconnect"] if admin => self.disconnect_relay(ctx, message).await,
+            ["status", "set", channel] if admin => self.set_status_channel(channel, ctx, message).await,
+            ["status", "remove"] if admin => self.remove_status_channel(ctx, message).await,
+            ["ping", "add", ping, role] if admin => self.add_ping(ctx, message, ping, role).await,
+            ["ping", "remove", ping] if admin => self.remove_ping(ctx, message, ping).await,
+            ["ping", "allow", ping, role] if admin => self.allow_ping_for_role(ctx, message, ping, role).await,
+            ["ping", "disallow", ping, role] if admin => self.disallow_ping_for_role(ctx, message, ping, role).await,
             ["ping", "request", ping, ..] => self.request_ping(ctx, message, ping).await,
             _ => Err(CommandError::InvalidCommand),
         };
@@ -580,7 +578,7 @@ impl EventHandler for DiscordHandler {
     }
 }
 
-async fn check_message_authorized(ctx: &SerenityContext, message: &SerenityMessage) -> bool {
+async fn check_message_admin(ctx: &SerenityContext, message: &SerenityMessage) -> bool {
     if let Ok(member) = message.member(&ctx).await {
         if let Ok(permissions) = member.permissions(&ctx.cache).await {
             return permissions.administrator();
