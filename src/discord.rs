@@ -297,7 +297,7 @@ impl DiscordClient {
     async fn try_append(&mut self, cache_and_http: &CacheAndHttp, channel: ChannelId, message: MessageId, content: &str) -> Result<SerenityMessage, ()> {
         match cache_and_http.http.get_message(channel.0, message.0).await {
             Ok(mut message) => {
-                let new_content = format!("{}\n\n{}", message.content, content);
+                let new_content = format!("{}\n{}", message.content, content);
                 if new_content.len() < MESSAGE_LENGTH_LIMIT {
                     let result = message.edit(&cache_and_http, |message| {
                         message.content(new_content)
@@ -495,7 +495,7 @@ impl DiscordHandler {
         let data = ctx.data.read().await;
         let ping_store = data.get::<PingStoreKey>().unwrap();
 
-        match ping_store.ping_for_channel(ping, message.channel_id) {
+        match ping_store.pings.get(ping) {
             Some(ping) => {
                 let allowed = sender_roles.iter()
                     .any(|role| ping.allowed_roles.contains(&role.0));
@@ -508,7 +508,7 @@ impl DiscordHandler {
 
         let changelog = Regex::new(r#"(?s)```\n(.*)\n```"#).unwrap();
         let changelog = changelog.captures(&message.content)
-            .and_then(|captures| captures.get(1))
+            .and_then(|captures| captures.get(0))
             .map(|changelog| changelog.as_str());
 
         match changelog {
