@@ -520,9 +520,11 @@ impl DiscordHandler {
 
         match changelog {
             Some(changelog) => {
+                let content = format!("{}: {}", message.author.mention(), changelog);
+
                 let _ = self.discord.do_send_async(SendPing {
                     ping: ping.to_owned(),
-                    content: changelog.to_owned(),
+                    content,
                 }).await;
                 Ok(())
             }
