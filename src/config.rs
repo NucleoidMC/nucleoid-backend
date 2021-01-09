@@ -24,7 +24,7 @@ impl Default for Config {
 pub struct DiscordConfig {
     pub token: String,
     pub ping_interval_minutes: u16,
-    #[serde(default = true)]
+    #[serde(default)]
     pub relay_channel_topic: bool,
 }
 
