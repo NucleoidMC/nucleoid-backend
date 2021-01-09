@@ -237,13 +237,17 @@ impl Handler<SendChat> for DiscordClient {
             let data = data.read().await;
             let relay_store = data.get::<RelayStoreKey>().unwrap();
             if let Some(relay) = relay_store.channel_to_relay.get(&send_chat.channel) {
-                let _ = relay.webhook.execute(&cache_and_http.http, false, move |webhook| {
+                let result = relay.webhook.execute(&cache_and_http.http, false, move |webhook| {
                     webhook.0.insert("allowed_mentions", json!({"parse": []}));
                     // TODO: configurable url
                     webhook.username(send_chat.sender.name)
                         .avatar_url(format!("https://minotar.net/helm/{}/64", send_chat.sender.id.replace("-", "")))
                         .content(send_chat.content)
                 }).await;
+
+                if let Err(error) = result {
+                    warn!("failed to relay chat message over webhook: {:?}", error);
+                }
             }
         }
     }
@@ -256,9 +260,13 @@ impl Handler<SendSystem> for DiscordClient {
             let data = data.read().await;
             let relay_store = data.get::<RelayStoreKey>().unwrap();
             if let Some(relay) = relay_store.channel_to_relay.get(&send_system.channel) {
-                let _ = ChannelId(relay.discord_channel).send_message(&cache_and_http.http, move |message| {
+                let result = ChannelId(relay.discord_channel).send_message(&cache_and_http.http, move |message| {
                     message.content(send_system.content).allowed_mentions(|m| m.empty_parse())
                 }).await;
+
+                if let Err(error) = result {
+                    warn!("failed to send system message: {:?}", error);
+                }
             }
         }
     }
@@ -298,8 +306,9 @@ impl Handler<SendPing> for DiscordClient {
                                 .allowed_mentions(|m| m.empty_parse().roles(&[role]))
                         }).await;
 
-                        if let Ok(message) = message {
-                            ping.last_message = Some(message.id.0);
+                        match message {
+                            Ok(message) => ping.last_message = Some(message.id.0),
+                            Err(error) => error!("failed to send ping: {:?}", error),
                         }
                     }
                 }
@@ -313,6 +322,10 @@ impl Handler<SendPing> for DiscordClient {
 #[async_trait]
 impl Handler<UpdateRelayStatus> for DiscordClient {
     async fn handle(&mut self, update_relay: UpdateRelayStatus, _ctx: &mut XtraContext<Self>) {
+        if !self.config.relay_channel_topic {
+            return;
+        }
+
         if let (Some(cache_and_http), Some(data)) = (&self.cache_and_http, &self.data) {
             let data = data.read().await;
             let relay_store = data.get::<RelayStoreKey>().unwrap();
@@ -329,9 +342,14 @@ impl Handler<UpdateRelayStatus> for DiscordClient {
                     }
                 }
 
-                let _ = ChannelId(relay.discord_channel).edit(&cache_and_http.http, move |channel| {
-                    channel.topic(topic)
-                }).await;
+                let edit_result = ChannelId(relay.discord_channel)
+                    .edit(&cache_and_http.http, move |channel| {
+                        channel.topic(topic)
+                    }).await;
+
+                if let Err(error) = edit_result {
+                    error!("failed to update channel topic: {:?}", error);
+                }
             }
         }
     }
@@ -577,7 +595,7 @@ impl DiscordHandler {
                 sender,
                 content,
                 name_color,
-                attachments
+                attachments,
             }).await.expect("controller disconnected");
         }
     }

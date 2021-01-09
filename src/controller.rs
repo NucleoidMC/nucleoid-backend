@@ -167,6 +167,8 @@ impl Handler<IncomingChat> for Controller {
 #[async_trait]
 impl Handler<OutgoingChat> for Controller {
     async fn handle(&mut self, message: OutgoingChat, _ctx: &mut Context<Self>) {
+        println!("[{}] <@{}> {}", message.channel, message.sender, message.content);
+
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
             let _ = integrations.do_send_async(integrations::OutgoingMessage::Chat {
                 sender: message.sender,
