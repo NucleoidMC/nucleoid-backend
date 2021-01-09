@@ -32,6 +32,7 @@ impl Actor for Controller {}
 pub struct RegisterIntegrationsClient {
     pub channel: String,
     pub game_version: String,
+    pub server_ip: Option<String>,
     pub client: Address<IntegrationsClient>,
 }
 
@@ -76,6 +77,7 @@ pub struct OutgoingChat {
     pub sender: String,
     pub content: String,
     pub name_color: Option<u32>,
+    pub attachments: Vec<ChatAttachment>
 }
 
 impl Message for OutgoingChat {
@@ -122,6 +124,7 @@ impl Handler<RegisterIntegrationsClient> for Controller {
         let status = self.status_by_channel.entry(message.channel)
             .or_insert_with(|| ServerStatus::default());
         status.game_version = message.game_version;
+        status.server_ip = message.server_ip;
     }
 }
 
@@ -169,6 +172,7 @@ impl Handler<OutgoingChat> for Controller {
                 sender: message.sender,
                 content: message.content,
                 name_color: message.name_color,
+                attachments: message.attachments
             }).await;
         }
     }
@@ -179,10 +183,19 @@ impl Handler<StatusUpdate> for Controller {
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
         println!("[{}] {} games, {} players", message.channel, message.games.len(), message.players.len());
 
-        let status = self.status_by_channel.entry(message.channel)
+        let status = self.status_by_channel.entry(message.channel.clone())
             .or_insert_with(|| ServerStatus::default());
         status.games = message.games;
         status.players = message.players;
+
+        if let Some(discord) = &self.discord {
+            let _ = discord.do_send_async(discord::UpdateRelayStatus {
+                channel: message.channel,
+                game_version: status.game_version.clone(),
+                server_ip: status.server_ip.clone(),
+                player_count: status.players.len(),
+            }).await;
+        }
     }
 }
 

@@ -38,11 +38,21 @@ pub async fn run(controller: Address<Controller>, config: IntegrationsConfig) {
     }
 }
 
-async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut S) -> Result<(String, String)> {
+struct Handshake {
+    channel: String,
+    game_version: String,
+    server_ip: Option<String>,
+}
+
+async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut S) -> Result<Handshake> {
     match stream.next().await {
         Some(HandleIncomingMessage(result)) => {
             match result {
-                Ok(IncomingMessage::Handshake { channel, game_version }) => Ok((channel, game_version)),
+                Ok(IncomingMessage::Handshake { channel, game_version, server_ip }) => Ok(Handshake {
+                    channel,
+                    game_version,
+                    server_ip,
+                }),
                 Ok(_) => Err(Error::MissingHandshake),
                 Err(err) => Err(err),
             }
@@ -53,7 +63,8 @@ async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut
 
 async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Result<()> {
     let (sink, mut stream) = split_framed(stream);
-    let (channel, game_version) = handshake(&mut stream).await?;
+    let handshake = handshake(&mut stream).await?;
+    let (channel, game_version, server_ip) = (handshake.channel, handshake.game_version, handshake.server_ip);
 
     info!("received handshake for: {}", channel);
 
@@ -65,7 +76,7 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
 
     let client = client.create(None).spawn(&mut TokioGlobal);
 
-    controller.do_send_async(RegisterIntegrationsClient { channel, game_version, client: client.clone() }).await
+    controller.do_send_async(RegisterIntegrationsClient { channel, game_version, server_ip, client: client.clone() }).await
         .expect("controller disconnected");
 
     Ok(client.attach_stream(stream).await)
@@ -93,6 +104,7 @@ pub enum IncomingMessage {
     Handshake {
         channel: String,
         game_version: String,
+        server_ip: Option<String>,
     },
     #[serde(rename = "chat")]
     Chat {
@@ -119,6 +131,7 @@ pub enum OutgoingMessage {
         content: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         name_color: Option<u32>,
+        attachments: Vec<ChatAttachment>,
     }
 }
 

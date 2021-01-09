@@ -7,7 +7,6 @@ use log::{error, info};
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
-use serenity::builder::ParseValue;
 use serenity::CacheAndHttp;
 use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
@@ -212,6 +211,17 @@ impl XtraMessage for SendPing {
     type Result = ();
 }
 
+pub struct UpdateRelayStatus {
+    pub channel: String,
+    pub game_version: String,
+    pub server_ip: Option<String>,
+    pub player_count: usize,
+}
+
+impl XtraMessage for UpdateRelayStatus {
+    type Result = ();
+}
+
 #[async_trait]
 impl Handler<Init> for DiscordClient {
     async fn handle(&mut self, message: Init, _ctx: &mut XtraContext<Self>) {
@@ -280,7 +290,7 @@ impl Handler<SendPing> for DiscordClient {
                         // TODO: return error?
                         let message = channel.send_message(&cache_and_http.http, move |message| {
                             let content = if new_ping {
-                                format!("{}: {}", role.mention(), send_ping.content)
+                                format!("{}! {}", role.mention(), send_ping.content)
                             } else {
                                 send_ping.content
                             };
@@ -296,6 +306,26 @@ impl Handler<SendPing> for DiscordClient {
             }
 
             ping_store.flush().await;
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<UpdateRelayStatus> for DiscordClient {
+    async fn handle(&mut self, update_relay: UpdateRelayStatus, _ctx: &mut XtraContext<Self>) {
+        if let (Some(cache_and_http), Some(data)) = (&self.cache_and_http, &self.data) {
+            let data = data.read().await;
+            let relay_store = data.get::<RelayStoreKey>().unwrap();
+
+            if let Some(relay) = relay_store.channel_to_relay.get(&update_relay.channel) {
+                let topic = match update_relay.server_ip {
+                    Some(ip) => format!("{} @ {} | {} players online", ip, update_relay.game_version, update_relay.player_count),
+                    None => format!("{} | {} players online", update_relay.game_version, update_relay.player_count)
+                };
+                let _ = ChannelId(relay.discord_channel).edit(&cache_and_http.http, move |channel| {
+                    channel.topic(topic)
+                }).await;
+            }
         }
     }
 }
@@ -331,8 +361,6 @@ impl DiscordHandler {
         let result = match tokens {
             ["relay", "connect", channel] if admin => self.connect_relay(channel, ctx, message).await,
             ["relay", "disconnect"] if admin => self.disconnect_relay(ctx, message).await,
-            ["status", "set", channel] if admin => self.set_status_channel(channel, ctx, message).await,
-            ["status", "remove"] if admin => self.remove_status_channel(ctx, message).await,
             ["ping", "add", ping, role] if admin => self.add_ping(ctx, message, ping, role).await,
             ["ping", "remove", ping] if admin => self.remove_ping(ctx, message, ping).await,
             ["ping", "allow", ping, role] if admin => self.allow_ping_for_role(ctx, message, ping, role).await,
@@ -390,16 +418,6 @@ impl DiscordHandler {
 
         ctx.http.delete_webhook_with_token(relay.webhook.id.0, &relay.webhook.token).await?;
 
-        Ok(())
-    }
-
-    async fn set_status_channel(&self, channel: &str, ctx: &SerenityContext, message: &SerenityMessage) -> CommandResult {
-        // TODO
-        Ok(())
-    }
-
-    async fn remove_status_channel(&self, ctx: &SerenityContext, message: &SerenityMessage) -> CommandResult {
-        // TODO
         Ok(())
     }
 
@@ -518,7 +536,7 @@ impl DiscordHandler {
 
         match changelog {
             Some(changelog) => {
-                let content = format!("{}: {}", message.author.mention(), changelog);
+                let content = format!("from {}: {}", message.author.mention(), changelog);
 
                 let _ = self.discord.do_send_async(SendPing {
                     ping: ping.to_owned(),
@@ -535,15 +553,24 @@ impl DiscordHandler {
 
         let relay_store = data.get::<RelayStoreKey>().unwrap();
         if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
-            let sender_name = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
-
+            let sender = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
             let name_color = self.get_sender_name_color(ctx, message).await;
+
+            let mut content = message.content_safe(&ctx.cache).await;
+
+            let attachments = message.attachments.iter()
+                .map(|attachment| ChatAttachment {
+                    name: attachment.filename.clone(),
+                    url: attachment.url.clone(),
+                })
+                .collect();
 
             self.controller.do_send_async(OutgoingChat {
                 channel: channel.clone(),
-                sender: sender_name,
-                content: message.content_safe(&ctx.cache).await,
+                sender,
+                content,
                 name_color,
+                attachments
             }).await.expect("controller disconnected");
         }
     }
