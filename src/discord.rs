@@ -322,6 +322,13 @@ impl Handler<UpdateRelayStatus> for DiscordClient {
                     Some(ip) => format!("{} @ {} | {} players online", ip, update_relay.game_version, update_relay.player_count),
                     None => format!("{} | {} players online", update_relay.game_version, update_relay.player_count)
                 };
+
+                if let Some(Channel::Guild(channel)) = cache_and_http.cache.channel(relay.discord_channel).await {
+                    if channel.topic.as_ref() == Some(&topic) {
+                        return;
+                    }
+                }
+
                 let _ = ChannelId(relay.discord_channel).edit(&cache_and_http.http, move |channel| {
                     channel.topic(topic)
                 }).await;
@@ -556,7 +563,7 @@ impl DiscordHandler {
             let sender = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
             let name_color = self.get_sender_name_color(ctx, message).await;
 
-            let mut content = message.content_safe(&ctx.cache).await;
+            let content = message.content_safe(&ctx.cache).await;
 
             let attachments = message.attachments.iter()
                 .map(|attachment| ChatAttachment {
