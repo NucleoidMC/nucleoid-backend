@@ -11,7 +11,7 @@ use serenity::CacheAndHttp;
 use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Channel, Message as SerenityMessage, ReactionType};
-use serenity::model::id::{ChannelId, MessageId, RoleId};
+use serenity::model::id::{ChannelId, RoleId};
 use serenity::model::webhook::Webhook;
 use serenity::prelude::*;
 use xtra::Context as XtraContext;
@@ -22,8 +22,6 @@ use xtra::prelude::*;
 use crate::{DiscordConfig, Persistent, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
-
-const MESSAGE_LENGTH_LIMIT: usize = 2000;
 
 struct RelayStoreKey;
 
@@ -97,7 +95,7 @@ impl PingStore {
 struct Ping {
     discord_channel: u64,
     discord_role: u64,
-    last_message: Option<u64>,
+    webhook: Webhook,
     last_ping_time: SystemTime,
     allowed_roles: HashSet<u64>,
 }
@@ -204,6 +202,8 @@ impl XtraMessage for SendSystem {
 
 pub struct SendPing {
     pub ping: String,
+    pub sender_name: String,
+    pub sender_icon: Option<String>,
     pub content: String,
 }
 
@@ -284,32 +284,28 @@ impl Handler<SendPing> for DiscordClient {
                 let ping_store = ping_store.get_mut_unchecked();
 
                 if let Some(ping) = ping_store.pings.get_mut(&send_ping.ping) {
-                    let channel = ChannelId(ping.discord_channel);
                     let role = RoleId(ping.discord_role);
 
-                    let new_ping = ping.try_new_ping(&self.config) || ping.last_message.is_none();
-                    let append_message = ping.last_message.filter(|_| !new_ping);
-                    let append_message = match append_message {
-                        Some(append_message) => self.try_append(&cache_and_http, channel, MessageId(append_message), &send_ping.content).await.ok(),
-                        None => None,
-                    };
+                    let new_ping = ping.try_new_ping(&self.config);
 
-                    if append_message.is_none() {
-                        // TODO: return error?
-                        let message = channel.send_message(&cache_and_http.http, move |message| {
-                            let content = if new_ping {
-                                format!("{}! {}", role.mention(), send_ping.content)
-                            } else {
-                                send_ping.content
-                            };
-                            message.content(content)
-                                .allowed_mentions(|m| m.empty_parse().roles(&[role]))
-                        }).await;
+                    let result = ping.webhook.execute(&cache_and_http.http, false, move |message| {
+                        message.0.insert("allowed_mentions", json!({"parse": [], "roles": [role.to_string()]}));
+                        message.username(send_ping.sender_name);
 
-                        match message {
-                            Ok(message) => ping.last_message = Some(message.id.0),
-                            Err(error) => error!("failed to send ping: {:?}", error),
+                        if let Some(icon) = send_ping.sender_icon {
+                            message.avatar_url(icon);
                         }
+
+                        let content = if new_ping {
+                            format!("{}! {}", role.mention(), send_ping.content)
+                        } else {
+                            send_ping.content
+                        };
+                        message.content(content)
+                    }).await;
+
+                    if let Err(error) = result {
+                        error!("failed to send ping: {:?}", error)
                     }
                 }
             }
@@ -351,25 +347,6 @@ impl Handler<UpdateRelayStatus> for DiscordClient {
                     error!("failed to update channel topic: {:?}", error);
                 }
             }
-        }
-    }
-}
-
-impl DiscordClient {
-    async fn try_append(&mut self, cache_and_http: &CacheAndHttp, channel: ChannelId, message: MessageId, content: &str) -> Result<SerenityMessage, ()> {
-        match cache_and_http.http.get_message(channel.0, message.0).await {
-            Ok(mut message) => {
-                let new_content = format!("{}\n{}", message.content, content);
-                if new_content.len() < MESSAGE_LENGTH_LIMIT {
-                    let result = message.edit(&cache_and_http, |message| {
-                        message.content(new_content)
-                    }).await;
-                    result.map(|_| message).map_err(|_| ())
-                } else {
-                    Err(())
-                }
-            }
-            Err(_) => Err(()),
         }
     }
 }
@@ -450,29 +427,32 @@ impl DiscordHandler {
         let mut data = ctx.data.write().await;
         let ping_store = data.get_mut::<PingStoreKey>().unwrap();
 
-        if let Some(guild) = message.guild(&ctx.cache).await {
-            let role_id = RoleId(role_id.parse::<u64>().map_err(|_| CommandError::InvalidRoleId)?);
-            if !guild.roles.contains_key(&role_id) {
-                return Err(CommandError::InvalidRoleId);
-            }
-
-            ping_store.write(|ping_store| {
-                let ping = ping.to_owned();
-                if !ping_store.pings.contains_key(&ping) {
-                    ping_store.pings.insert(ping, Ping {
-                        discord_channel: message.channel_id.0,
-                        discord_role: role_id.0,
-                        last_message: None,
-                        last_ping_time: SystemTime::now(),
-                        allowed_roles: HashSet::new(),
-                    });
-                    Ok(())
-                } else {
-                    Err(CommandError::PingAlreadyConnected)
+        match (message.guild(&ctx.cache).await, message.channel(&ctx.cache).await) {
+            (Some(guild), Some(Channel::Guild(channel))) => {
+                let role_id = RoleId(role_id.parse::<u64>().map_err(|_| CommandError::InvalidRoleId)?);
+                if !guild.roles.contains_key(&role_id) {
+                    return Err(CommandError::InvalidRoleId);
                 }
-            }).await
-        } else {
-            Err(CommandError::CannotRunHere)
+
+                let webhook = channel.create_webhook(&ctx.http, format!("Ping {}", ping)).await?;
+
+                ping_store.write(|ping_store| {
+                    let ping = ping.to_owned();
+                    if !ping_store.pings.contains_key(&ping) {
+                        ping_store.pings.insert(ping, Ping {
+                            discord_channel: channel.id.0,
+                            discord_role: role_id.0,
+                            webhook,
+                            last_ping_time: SystemTime::now(),
+                            allowed_roles: HashSet::new(),
+                        });
+                        Ok(())
+                    } else {
+                        Err(CommandError::PingAlreadyConnected)
+                    }
+                }).await
+            }
+            _ => Err(CommandError::CannotRunHere)
         }
     }
 
@@ -480,16 +460,21 @@ impl DiscordHandler {
         let mut data = ctx.data.write().await;
         let ping_store = data.get_mut::<PingStoreKey>().unwrap();
 
-        ping_store.write(|ping_store| {
+        let ping = ping_store.write(|ping_store| {
             if ping_store.ping_for_channel(ping, message.channel_id).is_none() {
                 return Err(CommandError::PingNotConnected);
             }
 
             match ping_store.pings.remove(ping) {
-                Some(_) => Ok(()),
+                Some(ping) => Ok(ping),
                 None => Err(CommandError::PingNotConnected)
             }
-        }).await
+        }).await?;
+
+        let webhook = ping.webhook;
+        ctx.http.delete_webhook_with_token(webhook.id.0, &webhook.token).await?;
+
+        Ok(())
     }
 
     async fn allow_ping_for_role(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str, role: &str) -> CommandResult {
@@ -561,11 +546,11 @@ impl DiscordHandler {
 
         match changelog {
             Some(changelog) => {
-                let content = format!("from {}: {}", message.author.mention(), changelog);
-
                 let _ = self.discord.do_send_async(SendPing {
                     ping: ping.to_owned(),
-                    content,
+                    sender_name: message.author.name.clone(),
+                    sender_icon: message.author.avatar.clone(),
+                    content: changelog.to_owned(),
                 }).await;
                 Ok(())
             }
