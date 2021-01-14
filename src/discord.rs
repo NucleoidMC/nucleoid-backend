@@ -549,7 +549,7 @@ impl DiscordHandler {
                 let _ = self.discord.do_send_async(SendPing {
                     ping: ping.to_owned(),
                     sender_name: message.author.name.clone(),
-                    sender_icon: message.author.avatar.clone(),
+                    sender_icon: message.author.avatar_url().clone(),
                     content: changelog.to_owned(),
                 }).await;
                 Ok(())
