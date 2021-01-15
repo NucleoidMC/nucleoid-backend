@@ -106,6 +106,15 @@ impl Message for StatusUpdate {
     type Result = ();
 }
 
+pub struct PerformanceUpdate {
+    pub channel: String,
+    pub performance: ServerPerformance,
+}
+
+impl Message for PerformanceUpdate {
+    type Result = ();
+}
+
 pub struct ServerLifecycleStart {
     pub channel: String,
 }
@@ -223,6 +232,19 @@ impl Handler<StatusUpdate> for Controller {
                 channel: message.channel.clone(),
                 time: SystemTime::now(),
                 status: status.clone(),
+            }).await;
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<PerformanceUpdate> for Controller {
+    async fn handle(&mut self, message: PerformanceUpdate, _ctx: &mut Context<Self>) {
+        if let Some(database) = &self.database {
+            let _ = database.do_send_async(database::WritePerformance {
+                channel: message.channel,
+                time: SystemTime::now(),
+                performance: message.performance
             }).await;
         }
     }

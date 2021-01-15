@@ -27,3 +27,14 @@ pub struct ChatAttachment {
     pub name: String,
     pub url: String,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct ServerPerformance {
+    pub average_tick_ms: u16,
+    pub tps: u8,
+    pub dimensions: u16,
+    pub entities: u32,
+    pub chunks: u32,
+    pub used_memory: u64,
+    pub total_memory: u64,
+}

@@ -120,6 +120,8 @@ pub enum IncomingMessage {
     LifecycleStart {},
     #[serde(rename = "lifecycle_stop")]
     LifecycleStop {},
+    #[serde(rename = "performance")]
+    Performance(ServerPerformance),
 }
 
 #[derive(Serialize, Debug)]
@@ -167,6 +169,10 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                     LifecycleStop {} => {
                         let lifecycle = ServerLifecycleStop { channel: self.channel.clone() };
                         self.controller.do_send_async(lifecycle).await
+                    }
+                    Performance(performance) => {
+                        let performance_update = PerformanceUpdate { channel: self.channel.clone(), performance };
+                        self.controller.do_send_async(performance_update).await
                     }
                     _ => {
                         warn!("received unexpected message from integrations client: {:?}", message);
