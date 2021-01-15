@@ -170,7 +170,7 @@ impl ChannelDatabase {
         let used_memory = performance.used_memory as i64;
         let total_memory = performance.total_memory as i64;
 
-        client.execute(&self.add_status, &[&time, &average_tick_ms, &tps, &dimensions, &entities, &chunks, &used_memory, &total_memory]).await?;
+        client.execute(&self.add_performance, &[&time, &average_tick_ms, &tps, &dimensions, &entities, &chunks, &used_memory, &total_memory]).await?;
         Ok(())
     }
 }
