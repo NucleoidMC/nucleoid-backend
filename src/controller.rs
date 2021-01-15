@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use xtra::prelude::*;
 
 use crate::Config;
+use crate::database::{self, DatabaseClient};
 use crate::discord::{self, DiscordClient};
 use crate::integrations::{self, IntegrationsClient};
 use crate::model::*;
@@ -12,6 +14,7 @@ use crate::model::*;
 pub struct Controller {
     config: Config,
     discord: Option<Address<DiscordClient>>,
+    database: Option<Address<DatabaseClient>>,
     integration_clients: HashMap<String, Address<IntegrationsClient>>,
     status_by_channel: HashMap<String, ServerStatus>,
 }
@@ -21,6 +24,7 @@ impl Controller {
         Controller {
             config,
             discord: None,
+            database: None,
             integration_clients: HashMap::new(),
             status_by_channel: HashMap::new(),
         }
@@ -62,6 +66,14 @@ impl Message for UnregisterDiscordClient {
     type Result = ();
 }
 
+pub struct RegisterDatabaseClient {
+    pub client: Address<DatabaseClient>,
+}
+
+impl Message for RegisterDatabaseClient {
+    type Result = ();
+}
+
 pub struct IncomingChat {
     pub channel: String,
     pub sender: Player,
@@ -77,7 +89,7 @@ pub struct OutgoingChat {
     pub sender: String,
     pub content: String,
     pub name_color: Option<u32>,
-    pub attachments: Vec<ChatAttachment>
+    pub attachments: Vec<ChatAttachment>,
 }
 
 impl Message for OutgoingChat {
@@ -150,6 +162,13 @@ impl Handler<UnregisterDiscordClient> for Controller {
 }
 
 #[async_trait]
+impl Handler<RegisterDatabaseClient> for Controller {
+    async fn handle(&mut self, message: RegisterDatabaseClient, _ctx: &mut Context<Self>) {
+        self.database = Some(message.client);
+    }
+}
+
+#[async_trait]
 impl Handler<IncomingChat> for Controller {
     async fn handle(&mut self, message: IncomingChat, _ctx: &mut Context<Self>) {
         println!("[{}] <{}> {}", message.channel, message.sender.name, message.content);
@@ -174,7 +193,7 @@ impl Handler<OutgoingChat> for Controller {
                 sender: message.sender,
                 content: message.content,
                 name_color: message.name_color,
-                attachments: message.attachments
+                attachments: message.attachments,
             }).await;
         }
     }
@@ -192,10 +211,18 @@ impl Handler<StatusUpdate> for Controller {
 
         if let Some(discord) = &self.discord {
             let _ = discord.do_send_async(discord::UpdateRelayStatus {
-                channel: message.channel,
+                channel: message.channel.clone(),
                 game_version: status.game_version.clone(),
                 server_ip: status.server_ip.clone(),
                 player_count: status.players.len(),
+            }).await;
+        }
+
+        if let Some(database) = &self.database {
+            let _ = database.do_send_async(database::WriteStatus {
+                channel: message.channel.clone(),
+                time: SystemTime::now(),
+                status: status.clone(),
             }).await;
         }
     }

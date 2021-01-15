@@ -14,6 +14,7 @@ mod model;
 mod controller;
 mod persistent;
 mod config;
+mod database;
 
 pub struct TokioGlobal;
 
@@ -44,6 +45,10 @@ async fn main() {
 
     if let Some(discord) = config.discord {
         futures.push(tokio::spawn(discord::run(controller.clone(), discord)));
+    }
+
+    if let Some(database) = config.database {
+        futures.push(tokio::spawn(database::run(controller.clone(), database)))
     }
 
     let _ = futures::future::join_all(futures).await;

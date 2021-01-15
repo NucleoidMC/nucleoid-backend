@@ -3,21 +3,12 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Config {
     pub web_server: Option<WebServerConfig>,
     pub integrations: Option<IntegrationsConfig>,
     pub discord: Option<DiscordConfig>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            web_server: Some(WebServerConfig { port: 25010 }),
-            integrations: Some(IntegrationsConfig { port: 25020 }),
-            discord: None,
-        }
-    }
+    pub database: Option<DatabaseConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -36,6 +27,15 @@ pub struct WebServerConfig {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IntegrationsConfig {
     pub port: u16,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DatabaseConfig {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub user: String,
+    pub password: String,
 }
 
 pub(super) fn load() -> Config {
