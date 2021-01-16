@@ -938,6 +938,7 @@ dependencies = [
  "bytes",
  "env_logger",
  "futures",
+ "lazy_static",
  "log",
  "regex",
  "reqwest",

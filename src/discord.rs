@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
+use lazy_static::lazy_static;
 use log::{error, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -566,7 +567,7 @@ impl DiscordHandler {
             let sender = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
             let name_color = self.get_sender_name_color(ctx, message).await;
 
-            let content = message.content_safe(&ctx.cache).await;
+            let content = self.sanitize_message_content(ctx, message).await;
 
             let attachments = message.attachments.iter()
                 .map(|attachment| ChatAttachment {
@@ -583,6 +584,26 @@ impl DiscordHandler {
                 attachments,
             }).await.expect("controller disconnected");
         }
+    }
+
+    async fn sanitize_message_content(&self, ctx: &SerenityContext, message: &SerenityMessage) -> String {
+        lazy_static! {
+            static ref CUSTOM_EMOJI_PATTERN: Regex = Regex::new(r#"<:([^>]*>)"#).unwrap();
+        }
+
+        let mut content = message.content_safe(&ctx.cache).await;
+
+        let mut index = 0;
+        while let Some(emoji) = CUSTOM_EMOJI_PATTERN.find_at(&content, index) {
+            let range = emoji.range();
+            if let Some(emoji) = serenity::utils::parse_emoji(emoji.as_str()) {
+                let sanitized_emoji = format!(":{}:", emoji.name);
+                index = range.start + sanitized_emoji.len();
+                content.replace_range(range, &sanitized_emoji);
+            }
+        }
+
+        content
     }
 
     async fn get_sender_name_color(&self, ctx: &SerenityContext, message: &SerenityMessage) -> Option<u32> {
