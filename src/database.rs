@@ -120,7 +120,7 @@ impl ChannelDatabase {
         let create_performance_table = format!(r#"
             CREATE TABLE IF NOT EXISTS {} (
                 time TIMESTAMP WITHOUT TIME ZONE NOT NULL PRIMARY KEY,
-                average_tick_ms SMALLINT NOT NULL,
+                average_tick_ms REAL NOT NULL,
                 tps SMALLINT NOT NULL,
                 dimensions SMALLINT NOT NULL,
                 entities INT NOT NULL,
@@ -162,7 +162,7 @@ impl ChannelDatabase {
     }
 
     async fn write_performance(&self, client: &mut Client, time: SystemTime, performance: ServerPerformance) -> Result<()> {
-        let average_tick_ms = performance.average_tick_ms as i16;
+        let average_tick_ms = performance.average_tick_ms as f32;
         let tps = performance.tps as i16;
         let dimensions = performance.dimensions as i16;
         let entities = performance.entities as i32;

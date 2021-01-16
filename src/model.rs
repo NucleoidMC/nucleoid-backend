@@ -30,7 +30,7 @@ pub struct ChatAttachment {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ServerPerformance {
-    pub average_tick_ms: u16,
+    pub average_tick_ms: f32,
     pub tps: u8,
     pub dimensions: u16,
     pub entities: u32,
