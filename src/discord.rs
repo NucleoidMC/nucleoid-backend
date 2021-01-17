@@ -540,7 +540,7 @@ impl DiscordHandler {
             None => return Err(CommandError::PingNotConnected),
         };
 
-        let changelog = Regex::new(r#"(?s)```\n(.*)\n```"#).unwrap();
+        let changelog = Regex::new(r#"(?s)```(.*)```"#).unwrap();
         let changelog = changelog.captures(&message.content)
             .and_then(|captures| captures.get(0))
             .map(|changelog| changelog.as_str());
