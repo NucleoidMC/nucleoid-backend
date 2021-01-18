@@ -119,7 +119,9 @@ pub enum IncomingMessage {
     #[serde(rename = "lifecycle_start")]
     LifecycleStart {},
     #[serde(rename = "lifecycle_stop")]
-    LifecycleStop {},
+    LifecycleStop {
+        crash: bool,
+    },
     #[serde(rename = "performance")]
     Performance(ServerPerformance),
 }
@@ -166,8 +168,8 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         let lifecycle = ServerLifecycleStart { channel: self.channel.clone() };
                         self.controller.do_send_async(lifecycle).await
                     }
-                    LifecycleStop {} => {
-                        let lifecycle = ServerLifecycleStop { channel: self.channel.clone() };
+                    LifecycleStop { crash } => {
+                        let lifecycle = ServerLifecycleStop { channel: self.channel.clone(), crash };
                         self.controller.do_send_async(lifecycle).await
                     }
                     Performance(performance) => {

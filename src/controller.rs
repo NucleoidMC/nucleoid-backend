@@ -125,6 +125,7 @@ impl Message for ServerLifecycleStart {
 
 pub struct ServerLifecycleStop {
     pub channel: String,
+    pub crash: bool,
 }
 
 impl Message for ServerLifecycleStop {
@@ -271,9 +272,15 @@ impl Handler<ServerLifecycleStop> for Controller {
         self.status_by_channel.remove(&message.channel);
 
         if let Some(discord) = &self.discord {
+            let content = if message.crash {
+                "Server has crashed!"
+            } else {
+                "Server has stopped!"
+            };
+
             let _ = discord.do_send_async(discord::SendSystem {
                 channel: message.channel,
-                content: "Server has stopped!".to_owned(),
+                content: content.to_owned(),
             }).await;
         }
     }
