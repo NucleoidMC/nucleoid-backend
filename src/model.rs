@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ServerStatus {
     pub game_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub server_ip: Option<String>,
     pub games: Vec<Game>,
     pub players: Vec<Player>,
@@ -26,8 +27,10 @@ pub struct Game {
 pub struct ChatMessage {
     pub sender: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name_color: Option<u32>,
     pub attachments: Vec<ChatAttachment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub replying_to: Option<Box<ChatMessage>>,
 }
 
