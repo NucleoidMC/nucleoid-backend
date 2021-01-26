@@ -22,7 +22,7 @@ serde_json = "1.0"
 regex = "1.4"
 lazy_static = "1.4"
 
-serenity = { version = "0.10", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "http", "rustls_backend"] }
+serenity = { version = "0.10", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "http", "rustls_tokio_0_2_backend"] }
 async-trait = "0.1"
 
 xtra = "0.5.0-rc.1"
