@@ -130,13 +130,7 @@ pub enum IncomingMessage {
 #[serde(tag = "type", content = "body")]
 pub enum OutgoingMessage {
     #[serde(rename = "chat")]
-    Chat {
-        sender: String,
-        content: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        name_color: Option<u32>,
-        attachments: Vec<ChatAttachment>,
-    }
+    Chat(ChatMessage)
 }
 
 impl Message for OutgoingMessage {

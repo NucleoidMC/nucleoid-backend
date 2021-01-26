@@ -564,26 +564,40 @@ impl DiscordHandler {
 
         let relay_store = data.get::<RelayStoreKey>().unwrap();
         if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
-            let sender = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
-            let name_color = self.get_sender_name_color(ctx, message).await;
-
-            let content = self.sanitize_message_content(ctx, message).await;
-
-            let attachments = message.attachments.iter()
-                .map(|attachment| ChatAttachment {
-                    name: attachment.filename.clone(),
-                    url: attachment.url.clone(),
-                })
-                .collect();
+            let message = self.parse_outgoing_chat_with_reply(ctx, message).await;
 
             self.controller.do_send_async(OutgoingChat {
                 channel: channel.clone(),
-                sender,
-                content,
-                name_color,
-                attachments,
+                chat: message,
             }).await.expect("controller disconnected");
         }
+    }
+
+    async fn parse_outgoing_chat_with_reply(&self, ctx: &SerenityContext, message: &SerenityMessage) -> ChatMessage {
+        let mut chat = self.parse_outgoing_chat(ctx, message).await;
+
+        if let Some(replying_to) = &message.referenced_message {
+            let replying_to = self.parse_outgoing_chat(ctx, &*replying_to).await;
+            chat.replying_to = Some(Box::new(replying_to));
+        }
+
+        chat
+    }
+
+    async fn parse_outgoing_chat(&self, ctx: &SerenityContext, message: &SerenityMessage) -> ChatMessage {
+        let sender = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
+        let name_color = self.get_sender_name_color(ctx, message).await;
+
+        let content = self.sanitize_message_content(ctx, message).await;
+
+        let attachments = message.attachments.iter()
+            .map(|attachment| ChatAttachment {
+                name: attachment.filename.clone(),
+                url: attachment.url.clone(),
+            })
+            .collect();
+
+        ChatMessage { sender, content, name_color, attachments, replying_to: None }
     }
 
     async fn sanitize_message_content(&self, ctx: &SerenityContext, message: &SerenityMessage) -> String {
@@ -638,7 +652,7 @@ impl EventHandler for DiscordHandler {
 
 async fn check_message_admin(ctx: &SerenityContext, message: &SerenityMessage) -> bool {
     if let Ok(member) = message.member(&ctx).await {
-        if let Ok(permissions) = member.permissions(&ctx.cache).await {
+        if let Ok(permissions) = member.permissions(&ctx).await {
             return permissions.administrator();
         }
     }

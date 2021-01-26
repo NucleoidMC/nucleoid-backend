@@ -23,6 +23,15 @@ pub struct Game {
 }
 
 #[derive(Serialize, Debug)]
+pub struct ChatMessage {
+    pub sender: String,
+    pub content: String,
+    pub name_color: Option<u32>,
+    pub attachments: Vec<ChatAttachment>,
+    pub replying_to: Option<Box<ChatMessage>>,
+}
+
+#[derive(Serialize, Debug)]
 pub struct ChatAttachment {
     pub name: String,
     pub url: String,

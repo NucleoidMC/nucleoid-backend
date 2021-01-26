@@ -86,10 +86,7 @@ impl Message for IncomingChat {
 
 pub struct OutgoingChat {
     pub channel: String,
-    pub sender: String,
-    pub content: String,
-    pub name_color: Option<u32>,
-    pub attachments: Vec<ChatAttachment>,
+    pub chat: ChatMessage,
 }
 
 impl Message for OutgoingChat {
@@ -196,15 +193,10 @@ impl Handler<IncomingChat> for Controller {
 #[async_trait]
 impl Handler<OutgoingChat> for Controller {
     async fn handle(&mut self, message: OutgoingChat, _ctx: &mut Context<Self>) {
-        println!("[{}] <@{}> {}", message.channel, message.sender, message.content);
+        println!("[{}] <@{}> {}", message.channel, message.chat.sender, message.chat.content);
 
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
-            let _ = integrations.do_send_async(integrations::OutgoingMessage::Chat {
-                sender: message.sender,
-                content: message.content,
-                name_color: message.name_color,
-                attachments: message.attachments,
-            }).await;
+            let _ = integrations.do_send_async(integrations::OutgoingMessage::Chat(message.chat)).await;
         }
     }
 }
