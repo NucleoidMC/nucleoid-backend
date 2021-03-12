@@ -93,6 +93,16 @@ impl Message for OutgoingChat {
     type Result = ();
 }
 
+pub struct OutgoingCommand {
+    pub channel: String,
+    pub sender: String,
+    pub command: String,
+}
+
+impl Message for OutgoingCommand {
+    type Result = ();
+}
+
 pub struct StatusUpdate {
     pub channel: String,
     pub games: Vec<Game>,
@@ -126,6 +136,15 @@ pub struct ServerLifecycleStop {
 }
 
 impl Message for ServerLifecycleStop {
+    type Result = ();
+}
+
+pub struct ServerSystemMessage {
+    pub channel: String,
+    pub content: String,
+}
+
+impl Message for ServerSystemMessage {
     type Result = ();
 }
 
@@ -202,6 +221,20 @@ impl Handler<OutgoingChat> for Controller {
 }
 
 #[async_trait]
+impl Handler<OutgoingCommand> for Controller {
+    async fn handle(&mut self, message: OutgoingCommand, _ctx: &mut Context<Self>) {
+        println!("[{}] <@{}> /{}", message.channel, message.sender, message.command);
+
+        if let Some(integrations) = self.integration_clients.get(&message.channel) {
+            let _ = integrations.do_send_async(integrations::OutgoingMessage::Command {
+                command: message.command,
+                sender: message.sender,
+            }).await;
+        }
+    }
+}
+
+#[async_trait]
 impl Handler<StatusUpdate> for Controller {
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
         println!("[{}] {} games, {} players", message.channel, message.games.len(), message.players.len());
@@ -273,6 +306,20 @@ impl Handler<ServerLifecycleStop> for Controller {
             let _ = discord.do_send_async(discord::SendSystem {
                 channel: message.channel,
                 content: content.to_owned(),
+            }).await;
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<ServerSystemMessage> for Controller {
+    async fn handle(&mut self, message: ServerSystemMessage, _ctx: &mut Context<Self>) {
+        println!("[{}] {}", message.channel, message.content);
+
+        if let Some(discord) = &self.discord {
+            let _ = discord.do_send_async(discord::SendSystem {
+                channel: message.channel,
+                content: message.content,
             }).await;
         }
     }

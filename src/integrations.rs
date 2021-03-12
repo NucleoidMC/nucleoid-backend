@@ -124,13 +124,22 @@ pub enum IncomingMessage {
     },
     #[serde(rename = "performance")]
     Performance(ServerPerformance),
+    #[serde(rename = "system")]
+    SystemMessage {
+        content: String,
+    }
 }
 
 #[derive(Serialize, Debug)]
 #[serde(tag = "type", content = "body")]
 pub enum OutgoingMessage {
     #[serde(rename = "chat")]
-    Chat(ChatMessage)
+    Chat(ChatMessage),
+    #[serde(rename = "command")]
+    Command {
+        command: String,
+        sender: String,
+    }
 }
 
 impl Message for OutgoingMessage {
@@ -169,6 +178,10 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                     Performance(performance) => {
                         let performance_update = PerformanceUpdate { channel: self.channel.clone(), performance };
                         self.controller.do_send_async(performance_update).await
+                    }
+                    SystemMessage { content  } => {
+                        let system_message = ServerSystemMessage { channel: self.channel.clone(), content };
+                        self.controller.do_send_async(system_message).await
                     }
                     _ => {
                         warn!("received unexpected message from integrations client: {:?}", message);

@@ -574,6 +574,22 @@ impl DiscordHandler {
         }
     }
 
+    async fn send_outgoing_command(&self, ctx: &SerenityContext, message: &SerenityMessage) {
+        let data = ctx.data.read().await;
+
+        let relay_store = data.get::<RelayStoreKey>().unwrap();
+        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
+            let command = self.sanitize_message_content(ctx, message).await[2..].to_owned();
+            let sender = self.sender_name(ctx, message).await;
+
+            self.controller.do_send_async(OutgoingCommand {
+                channel: channel.clone(),
+                command,
+                sender
+            }).await.expect("controller disconnected");
+        }
+    }
+
     async fn parse_outgoing_chat_with_reply(&self, ctx: &SerenityContext, message: &SerenityMessage) -> ChatMessage {
         let mut chat = self.parse_outgoing_chat(ctx, message).await;
 
@@ -586,7 +602,7 @@ impl DiscordHandler {
     }
 
     async fn parse_outgoing_chat(&self, ctx: &SerenityContext, message: &SerenityMessage) -> ChatMessage {
-        let sender = message.author_nick(&ctx).await.unwrap_or(message.author.name.clone());
+        let sender = self.sender_name(ctx, message).await;
         let name_color = self.get_sender_name_color(ctx, message).await;
 
         let content = self.sanitize_message_content(ctx, message).await;
@@ -599,6 +615,10 @@ impl DiscordHandler {
             .collect();
 
         ChatMessage { sender, content, name_color, attachments, replying_to: None }
+    }
+
+    async fn sender_name(&self, ctx: &SerenityContext, message: &SerenityMessage) -> String {
+        message.author_nick(&ctx).await.unwrap_or(message.author.name.clone())
     }
 
     async fn sanitize_message_content(&self, ctx: &SerenityContext, message: &SerenityMessage) -> String {
@@ -642,7 +662,11 @@ impl EventHandler for DiscordHandler {
             let tokens: Vec<&str> = message.content.split_ascii_whitespace().collect();
             self.handle_command(&tokens[1..], &ctx, &message).await;
         } else if !message.author.bot {
-            self.send_outgoing_chat(&ctx, &message).await;
+            if message.content.starts_with("//") && check_message_admin(&ctx, &message).await {
+                self.send_outgoing_command(&ctx, &message).await;
+            } else {
+                self.send_outgoing_chat(&ctx, &message).await;
+            }
         }
     }
 
