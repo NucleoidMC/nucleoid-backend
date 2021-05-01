@@ -9,6 +9,11 @@ pub struct ServerStatus {
     pub players: Vec<Player>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub enum ServerType {
+    Minecraft, Velocity
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Player {
     pub id: String,

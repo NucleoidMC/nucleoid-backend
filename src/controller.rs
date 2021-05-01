@@ -124,6 +124,7 @@ impl Message for PerformanceUpdate {
 
 pub struct ServerLifecycleStart {
     pub channel: String,
+    pub server_type: ServerType,
 }
 
 impl Message for ServerLifecycleStart {
@@ -133,6 +134,7 @@ impl Message for ServerLifecycleStart {
 pub struct ServerLifecycleStop {
     pub channel: String,
     pub crash: bool,
+    pub server_type: ServerType,
 }
 
 impl Message for ServerLifecycleStop {
@@ -284,7 +286,10 @@ impl Handler<ServerLifecycleStart> for Controller {
         if let Some(discord) = &self.discord {
             let _ = discord.do_send_async(discord::SendSystem {
                 channel: message.channel,
-                content: format!("Server has started!"),
+                content: format!("{} has started!", match message.server_type {
+                    ServerType::Minecraft => "Server",
+                    ServerType::Velocity => "Proxy",
+                }),
             }).await;
         }
     }
@@ -298,9 +303,15 @@ impl Handler<ServerLifecycleStop> for Controller {
 
         if let Some(discord) = &self.discord {
             let content = if message.crash {
-                "Server has crashed!"
+                format!("{} has crashed!", match message.server_type {
+                    ServerType::Minecraft => "Server",
+                    ServerType::Velocity => "Proxy",
+                })
             } else {
-                "Server has stopped!"
+                format!("{} has stopped!", match message.server_type {
+                    ServerType::Minecraft => "Server",
+                    ServerType::Velocity => "Proxy",
+                })
             };
 
             let _ = discord.do_send_async(discord::SendSystem {

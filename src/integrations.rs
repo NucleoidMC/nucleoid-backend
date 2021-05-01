@@ -42,16 +42,18 @@ struct Handshake {
     channel: String,
     game_version: String,
     server_ip: Option<String>,
+    server_type: ServerType,
 }
 
 async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut S) -> Result<Handshake> {
     match stream.next().await {
         Some(HandleIncomingMessage(result)) => {
             match result {
-                Ok(IncomingMessage::Handshake { channel, game_version, server_ip }) => Ok(Handshake {
+                Ok(IncomingMessage::Handshake { channel, game_version, server_ip, server_type }) => Ok(Handshake {
                     channel,
                     game_version,
                     server_ip,
+                    server_type: server_type.unwrap_or(ServerType::Minecraft),
                 }),
                 Ok(_) => Err(Error::MissingHandshake),
                 Err(err) => Err(err),
@@ -64,14 +66,15 @@ async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut
 async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Result<()> {
     let (sink, mut stream) = split_framed(stream);
     let handshake = handshake(&mut stream).await?;
-    let (channel, game_version, server_ip) = (handshake.channel, handshake.game_version, handshake.server_ip);
+    let (channel, game_version, server_ip, server_type) = (handshake.channel, handshake.game_version, handshake.server_ip, handshake.server_type);
 
-    info!("received handshake for: {}", channel);
+    info!("received handshake for: {} (type: {:?})", channel, server_type);
 
     let client = IntegrationsClient {
         controller: controller.clone(),
         channel: channel.clone(),
         sink: Box::pin(sink),
+        server_type,
     };
 
     let client = client.create(None).spawn(&mut TokioGlobal);
@@ -86,6 +89,7 @@ pub struct IntegrationsClient {
     controller: Address<Controller>,
     channel: String,
     sink: Pin<Box<dyn Sink<OutgoingMessage, Error = Error> + Send + Sync>>,
+    server_type: ServerType,
 }
 
 #[async_trait]
@@ -105,6 +109,7 @@ pub enum IncomingMessage {
         channel: String,
         game_version: String,
         server_ip: Option<String>,
+        server_type: Option<ServerType>,
     },
     #[serde(rename = "chat")]
     Chat {
@@ -168,11 +173,17 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         self.controller.do_send_async(status_update).await
                     }
                     LifecycleStart {} => {
-                        let lifecycle = ServerLifecycleStart { channel: self.channel.clone() };
+                        let lifecycle = ServerLifecycleStart {
+                            channel: self.channel.clone(),
+                            server_type: self.server_type.clone(),
+                        };
                         self.controller.do_send_async(lifecycle).await
                     }
                     LifecycleStop { crash } => {
-                        let lifecycle = ServerLifecycleStop { channel: self.channel.clone(), crash };
+                        let lifecycle = ServerLifecycleStop { channel: self.channel.clone(),
+                            crash,
+                            server_type: self.server_type.clone()
+                        };
                         self.controller.do_send_async(lifecycle).await
                     }
                     Performance(performance) => {
