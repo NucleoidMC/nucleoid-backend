@@ -144,6 +144,12 @@ pub enum OutgoingMessage {
     Command {
         command: String,
         sender: String,
+    },
+    #[serde(rename = "send_to_server")]
+    SendToServer {
+        // The UUID
+        player: String,
+        target_server: String,
     }
 }
 

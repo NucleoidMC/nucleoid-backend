@@ -103,6 +103,17 @@ impl Message for OutgoingCommand {
     type Result = ();
 }
 
+pub struct OutgoingServerChange {
+    // This should always be sent to a proxy, never a regular server.
+    pub channel: String,
+    pub player: String,
+    pub target_server: String,
+}
+
+impl Message for OutgoingServerChange {
+    type Result = ();
+}
+
 pub struct StatusUpdate {
     pub channel: String,
     pub games: Vec<Game>,
@@ -231,6 +242,19 @@ impl Handler<OutgoingCommand> for Controller {
             let _ = integrations.do_send_async(integrations::OutgoingMessage::Command {
                 command: message.command,
                 sender: message.sender,
+            }).await;
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<OutgoingServerChange> for Controller {
+    async fn handle(&mut self, message: OutgoingServerChange, _ctx: &mut Context<Self>) -> <OutgoingServerChange as Message>::Result {
+        println!("[{}] {} -> {}", message.channel, message.player, message.target_server);
+        if let Some(integrations) = self.integration_clients.get(&message.channel) {
+            let _ = integrations.do_send_async(integrations::OutgoingMessage::SendToServer {
+                player: message.player,
+                target_server: message.target_server,
             }).await;
         }
     }
