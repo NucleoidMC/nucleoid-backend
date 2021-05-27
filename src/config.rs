@@ -2,6 +2,7 @@ use std::fs::File;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Config {
@@ -9,6 +10,7 @@ pub struct Config {
     pub integrations: Option<IntegrationsConfig>,
     pub discord: Option<DiscordConfig>,
     pub database: Option<DatabaseConfig>,
+    pub kickbacks: HashMap<String, Kickback>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -36,6 +38,13 @@ pub struct DatabaseConfig {
     pub database: String,
     pub user: String,
     pub password: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Kickback {
+    pub to_server: String,
+    pub from_server: String,
+    pub proxy_channel: String,
 }
 
 pub(super) fn load() -> Config {

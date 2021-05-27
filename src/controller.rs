@@ -309,12 +309,23 @@ impl Handler<ServerLifecycleStart> for Controller {
 
         if let Some(discord) = &self.discord {
             let _ = discord.do_send_async(discord::SendSystem {
-                channel: message.channel,
+                channel: message.channel.clone(),
                 content: format!("{} has started!", match message.server_type {
                     ServerType::Minecraft => "Server",
                     ServerType::Velocity => "Proxy",
                 }),
             }).await;
+        }
+
+        if let Some(kickback) = self.config.kickbacks.get(&*message.channel) {
+            if let Some(proxy_client) = self.integration_clients.get(&*kickback.proxy_channel) {
+                let _ = proxy_client.do_send_async(
+                    integrations::OutgoingMessage::SendServerToServer {
+                        from_server: kickback.from_server.clone(),
+                        to_server: kickback.to_server.clone(),
+                    }
+                ).await;
+            }
         }
     }
 }
