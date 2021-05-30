@@ -150,6 +150,11 @@ pub enum OutgoingMessage {
         // The UUID
         player: String,
         target_server: String,
+    },
+    #[serde(rename = "send_server_to_server")]
+    SendServerToServer {
+        from_server: String,
+        to_server: String,
     }
 }
 
