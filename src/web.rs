@@ -23,7 +23,12 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
 
 async fn get_status(controller: Address<Controller>, channel: String) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
     match controller.send(GetStatus(channel)).await {
-        Ok(status) => Ok(Box::new(warp::reply::json(&status))),
+        Ok(status) => {
+            Ok(match status {
+                Some(status) => Box::new(warp::reply::json(&status)),
+                None => Box::new(warp::reply::with_status("Not found", StatusCode::NOT_FOUND)),
+            })
+        },
         Err(err) => Ok(Box::new(warp::reply::with_status(format!("{:?}", err), StatusCode::INTERNAL_SERVER_ERROR))),
     }
 }

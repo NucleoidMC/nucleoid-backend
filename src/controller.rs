@@ -164,7 +164,7 @@ impl Message for ServerSystemMessage {
 pub struct GetStatus(pub String);
 
 impl Message for GetStatus {
-    type Result = ServerStatus;
+    type Result = Option<ServerStatus>;
 }
 
 #[async_trait]
@@ -362,8 +362,7 @@ impl Handler<ServerSystemMessage> for Controller {
 
 #[async_trait]
 impl Handler<GetStatus> for Controller {
-    async fn handle(&mut self, message: GetStatus, _ctx: &mut Context<Self>) -> ServerStatus {
+    async fn handle(&mut self, message: GetStatus, _ctx: &mut Context<Self>) -> Option<ServerStatus> {
         self.status_by_channel.get(&message.0).cloned()
-            .unwrap_or(ServerStatus::default())
     }
 }
