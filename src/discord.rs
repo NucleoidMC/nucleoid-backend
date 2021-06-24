@@ -241,7 +241,7 @@ impl Handler<SendChat> for DiscordClient {
                 let result = relay.webhook.execute(&cache_and_http.http, false, move |webhook| {
                     webhook.0.insert("allowed_mentions", json!({"parse": []}));
                     // TODO: configurable url
-                    let avatar_url = format!("https://visage.surgeplay.com/face/128/{}", send_chat.sender.id.replace("-", ""));
+                    let avatar_url = format!("https://api.nucleoid.xyz/skin/face/128/{}", send_chat.sender.id.replace("-", ""));
                     webhook.username(send_chat.sender.name)
                         .avatar_url(avatar_url)
                         .content(send_chat.content)
