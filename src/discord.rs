@@ -239,12 +239,19 @@ impl Handler<SendChat> for DiscordClient {
             let relay_store = data.get::<RelayStoreKey>().unwrap();
             if let Some(relay) = relay_store.channel_to_relay.get(&send_chat.channel) {
                 let result = relay.webhook.execute(&cache_and_http.http, false, move |webhook| {
+                    let mut webhook = webhook
+                        .username(send_chat.sender.name)
+                        .content(send_chat.content);
+
                     webhook.0.insert("allowed_mentions", json!({"parse": []}));
-                    // TODO: configurable url
-                    let avatar_url = format!("https://api.nucleoid.xyz/skin/face/128/{}", send_chat.sender.id.replace("-", ""));
-                    webhook.username(send_chat.sender.name)
-                        .avatar_url(avatar_url)
-                        .content(send_chat.content)
+
+                    if let Some(avatar_url) = &self.config.player_avatar_url {
+                        let id = send_chat.sender.id.replace("-", "");
+                        let avatar_url = format!("{}/{}", avatar_url, id);
+                        webhook = webhook.avatar_url(avatar_url);
+                    }
+
+                    webhook
                 }).await;
 
                 if let Err(error) = result {

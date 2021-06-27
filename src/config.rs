@@ -10,6 +10,7 @@ pub struct Config {
     pub integrations: Option<IntegrationsConfig>,
     pub discord: Option<DiscordConfig>,
     pub database: Option<DatabaseConfig>,
+    #[serde(default = "HashMap::new()")]
     pub kickbacks: HashMap<String, Kickback>,
 }
 
@@ -19,6 +20,8 @@ pub struct DiscordConfig {
     pub ping_interval_minutes: u16,
     #[serde(default)]
     pub relay_channel_topic: bool,
+    #[serde(default)]
+    pub player_avatar_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
