@@ -592,7 +592,7 @@ impl DiscordHandler {
             self.controller.do_send_async(OutgoingCommand {
                 channel: channel.clone(),
                 command,
-                sender
+                sender,
             }).await.expect("controller disconnected");
         }
     }
@@ -610,6 +610,12 @@ impl DiscordHandler {
 
     async fn parse_outgoing_chat(&self, ctx: &SerenityContext, message: &SerenityMessage) -> ChatMessage {
         let sender = self.sender_name(ctx, message).await;
+        let sender_user = DiscordUser {
+            id: message.author.id.0,
+            name: message.author.name.clone(),
+            discriminator: message.author.discriminator,
+        };
+
         let name_color = self.get_sender_name_color(ctx, message).await;
 
         let content = self.sanitize_message_content(ctx, message).await;
@@ -621,7 +627,7 @@ impl DiscordHandler {
             })
             .collect();
 
-        ChatMessage { sender, content, name_color, attachments, replying_to: None }
+        ChatMessage { sender, sender_user, content, name_color, attachments, replying_to: None }
     }
 
     async fn sender_name(&self, ctx: &SerenityContext, message: &SerenityMessage) -> String {

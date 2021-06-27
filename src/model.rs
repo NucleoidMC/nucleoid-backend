@@ -31,12 +31,20 @@ pub struct Game {
 #[derive(Serialize, Debug)]
 pub struct ChatMessage {
     pub sender: String,
+    pub sender_user: DiscordUser,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name_color: Option<u32>,
     pub attachments: Vec<ChatAttachment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replying_to: Option<Box<ChatMessage>>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct DiscordUser {
+    pub id: u64,
+    pub name: String,
+    pub discriminator: u16,
 }
 
 #[derive(Serialize, Debug)]
