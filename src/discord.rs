@@ -238,6 +238,8 @@ impl Handler<SendChat> for DiscordClient {
             let data = data.read().await;
             let relay_store = data.get::<RelayStoreKey>().unwrap();
             if let Some(relay) = relay_store.channel_to_relay.get(&send_chat.channel) {
+                let avatar_url = &self.config.player_avatar_url;
+
                 let result = relay.webhook.execute(&cache_and_http.http, false, move |webhook| {
                     let mut webhook = webhook
                         .username(send_chat.sender.name)
@@ -245,7 +247,7 @@ impl Handler<SendChat> for DiscordClient {
 
                     webhook.0.insert("allowed_mentions", json!({"parse": []}));
 
-                    if let Some(avatar_url) = &self.config.player_avatar_url {
+                    if let Some(avatar_url) = avatar_url {
                         let id = send_chat.sender.id.replace("-", "");
                         let avatar_url = format!("{}/{}", avatar_url, id);
                         webhook = webhook.avatar_url(avatar_url);

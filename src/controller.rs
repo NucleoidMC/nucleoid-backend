@@ -116,8 +116,8 @@ impl Message for OutgoingServerChange {
 
 pub struct StatusUpdate {
     pub channel: String,
-    pub games: Vec<Game>,
-    pub players: Vec<Player>,
+    pub games: Option<Vec<Game>>,
+    pub players: Option<Vec<Player>>,
 }
 
 impl Message for StatusUpdate {
@@ -263,12 +263,18 @@ impl Handler<OutgoingServerChange> for Controller {
 #[async_trait]
 impl Handler<StatusUpdate> for Controller {
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
-        println!("[{}] {} games, {} players", message.channel, message.games.len(), message.players.len());
-
         let status = self.status_by_channel.entry(message.channel.clone())
             .or_insert_with(|| ServerStatus::default());
-        status.games = message.games;
-        status.players = message.players;
+
+        if let Some(games) = message.games {
+            status.games = games;
+        }
+
+        if let Some(players) = message.players {
+            status.players = players;
+        }
+
+        println!("[{}] {} games, {} players", message.channel, status.games.len(), status.players.len());
 
         if let Some(discord) = &self.discord {
             let _ = discord.do_send_async(discord::UpdateRelayStatus {

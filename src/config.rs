@@ -10,7 +10,7 @@ pub struct Config {
     pub integrations: Option<IntegrationsConfig>,
     pub discord: Option<DiscordConfig>,
     pub database: Option<DatabaseConfig>,
-    #[serde(default = "HashMap::new()")]
+    #[serde(default = "HashMap::new")]
     pub kickbacks: HashMap<String, Kickback>,
 }
 

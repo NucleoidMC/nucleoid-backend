@@ -118,8 +118,10 @@ pub enum IncomingMessage {
     },
     #[serde(rename = "status")]
     Status {
-        games: Vec<Game>,
-        players: Vec<Player>,
+        #[serde(default)]
+        players: Option<Vec<Player>>,
+        #[serde(default)]
+        games: Option<Vec<Game>>,
     },
     #[serde(rename = "lifecycle_start")]
     LifecycleStart {},
