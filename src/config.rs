@@ -36,7 +36,6 @@ pub struct ErrorWebhookConfig {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WebServerConfig {
     pub port: u16,
-    pub server_tokens: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

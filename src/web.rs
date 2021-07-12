@@ -4,8 +4,7 @@ use warp::http::StatusCode;
 use xtra::prelude::*;
 
 use crate::controller::*;
-use crate::statistics::database::{UploadStatsBundle, GetPlayerStats};
-use crate::statistics::model::GameStatsBundle;
+use crate::statistics::database::GetPlayerStats;
 use crate::WebServerConfig;
 
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
@@ -36,22 +35,9 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             move |uuid| get_player_stats(controller.clone(), uuid, None)
         }).with(&cors);
 
-    let upload_game_stats = warp::path("stats")
-        .and(warp::path("upload"))
-        .and(warp::filters::method::post())
-        .and(warp::header("Authorization"))
-        .and(warp::filters::body::json())
-        .and_then({
-            let config = config.clone();
-            let controller = controller.clone();
-            move |authorization, game_stats: GameStatsBundle|
-                upload_game_stats(config.clone(), controller.clone(), authorization, game_stats)
-        });
-
     let combined = status
         .or(player_game_stats)
-        .or(all_player_game_stats)
-        .or(upload_game_stats);
+        .or(all_player_game_stats);
 
     warp::serve(combined)
         .run(([127, 0, 0, 1], config.port))
@@ -95,47 +81,6 @@ async fn get_player_stats(controller: Address<Controller>, uuid: Uuid, namespace
         Err(e) => {
             Ok(handle_server_error(&e))
         }
-    }
-}
-
-async fn upload_game_stats(config: WebServerConfig, controller: Address<Controller>, authorization: String, game_stats: GameStatsBundle) -> ApiResult {
-    let statistics = if let Some(statistics) = controller.send(GetStatisticsDatabaseController)
-        .await.expect("controller disconnected") {
-        statistics
-    } else {
-        return Ok(send_http_status(StatusCode::NOT_FOUND));
-    };
-
-    if !config.server_tokens.contains(&authorization) {
-        return Ok(send_http_status(StatusCode::UNAUTHORIZED))
-    }
-
-    if let Some(global) = &game_stats.stats.global {
-        log::debug!("server '{}' uploaded {} player statistics and {} global statistics in statistics bundle for {}",
-                game_stats.server_name, game_stats.stats.players.len(), global.len(), game_stats.namespace);
-
-        for name in global.keys() {
-            if name.contains('.') {
-                return Ok(send_http_status(StatusCode::BAD_REQUEST));
-            }
-        }
-    } else {
-        log::debug!("server '{}' uploaded {} player statistics in statistics bundle for {}",
-                game_stats.server_name, game_stats.stats.players.len(), game_stats.namespace);
-    }
-
-    for stats in game_stats.stats.players.values() {
-        for name in stats.keys() {
-            if name.contains('.') {
-                return Ok(send_http_status(StatusCode::BAD_REQUEST));
-            }
-        }
-    }
-
-    let res = statistics.send(UploadStatsBundle(game_stats)).await.unwrap();
-    match res {
-        Ok(()) => Ok(Box::new(warp::reply::with_status("", StatusCode::NO_CONTENT))),
-        Err(e) => Ok(handle_server_error(&e)),
     }
 }
 

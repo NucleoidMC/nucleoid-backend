@@ -9,7 +9,7 @@ use crate::database::{self, DatabaseClient};
 use crate::discord::{self, DiscordClient, ReportError};
 use crate::integrations::{self, IntegrationsClient};
 use crate::model::*;
-use crate::statistics::database::StatisticDatabaseController;
+use crate::statistics::database::{StatisticDatabaseController, UploadStatsBundle};
 
 // TODO: use numerical channel ids internally?
 pub struct Controller {
@@ -434,6 +434,15 @@ impl Handler<BackendError> for Controller {
                 description: message.description,
                 fields: message.fields,
             }).await;
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<UploadStatsBundle> for Controller {
+    async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) {
+        if let Some(statistics) = &self.statistics {
+            let _ = statistics.do_send_async(message).await;
         }
     }
 }

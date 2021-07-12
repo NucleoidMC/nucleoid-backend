@@ -14,6 +14,8 @@ use xtra::prelude::*;
 use crate::{IntegrationsConfig, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
+use crate::statistics::model::GameStatsBundle;
+use crate::statistics::database::UploadStatsBundle;
 
 const MAX_FRAME_LENGTH: usize = 4 * 1024 * 1024;
 const FRAME_HEADER_SIZE: usize = 4;
@@ -134,7 +136,9 @@ pub enum IncomingMessage {
     #[serde(rename = "system")]
     SystemMessage {
         content: String,
-    }
+    },
+    #[serde(rename = "upload_statistics")]
+    UploadStatistics(GameStatsBundle),
 }
 
 #[derive(Serialize, Debug)]
@@ -206,6 +210,17 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                     SystemMessage { content  } => {
                         let system_message = ServerSystemMessage { channel: self.channel.clone(), content };
                         self.controller.do_send_async(system_message).await
+                    }
+                    UploadStatistics(bundle) => {
+                        if let Some(global) = &bundle.stats.global {
+                            log::debug!("server '{}' uploaded {} player statistics and {} global statistics in statistics bundle for {}",
+                                self.channel, bundle.stats.players.len(), global.len(), bundle.namespace);
+                        } else {
+                            log::debug!("server '{}' uploaded {} player statistics in statistics bundle for {}",
+                                self.channel, bundle.stats.players.len(), bundle.namespace);
+                        }
+                        let upload_bundle_message = UploadStatsBundle(bundle);
+                        self.controller.do_send_async(upload_bundle_message).await
                     }
                     _ => {
                         warn!("received unexpected message from integrations client: {:?}", message);

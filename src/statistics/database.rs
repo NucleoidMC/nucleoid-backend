@@ -1,16 +1,18 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use async_trait::async_trait;
+use bson::Document;
 use futures::TryStreamExt;
+use log::warn;
 use mongodb::{bson::doc, Client, Collection, Database};
 use mongodb::options::FindOptions;
 use uuid::Uuid;
-use xtra::{Actor, Context, Handler, Message, Address};
+use xtra::{Actor, Address, Context, Handler, Message};
 
+use crate::{BackendError, Controller, StatisticsConfig};
+use crate::statistics::model::{GameStatsBundle, GlobalGameStats, PlayerGameStats, PlayerProfile, PlayerStatsResponse};
 use crate::util::uuid_to_bson;
-use std::collections::HashMap;
-use bson::Document;
-use crate::statistics::model::{PlayerProfile, PlayerGameStats, GlobalGameStats, PlayerStatsResponse, GameStatsBundle};
-use crate::{StatisticsConfig, Controller, BackendError};
 
 const CORRUPT_STATS_DESCRIPTION: &str = r#"
 The backend detected an invalid statistic document while uploading a bundle.
@@ -326,12 +328,14 @@ impl Handler<GetPlayerStats> for StatisticDatabaseController {
 pub struct UploadStatsBundle(pub GameStatsBundle);
 
 impl Message for UploadStatsBundle {
-    type Result = Result<()>;
+    type Result = ();
 }
 
 #[async_trait]
 impl Handler<UploadStatsBundle> for StatisticDatabaseController {
     async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) -> <UploadStatsBundle as Message>::Result {
-        self.upload_stats_bundle(message.0).await
+        if let Err(e) = self.upload_stats_bundle(message.0.clone()).await {
+            warn!("Failed to upload stats bundle {:?}: {}", message.0, e);
+        }
     }
 }

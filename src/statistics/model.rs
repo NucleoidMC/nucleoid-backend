@@ -75,20 +75,19 @@ pub struct GlobalStatsBundle {
 pub type PlayerStatsResponse = HashMap<String, HashMap<String, f64>>;
 pub type PlayerStatsBundle = HashMap<Uuid, HashMap<String, UploadStat>>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GameStatsBundle {
-    pub server_name: String,
     pub namespace: String,
     pub stats: StatsBundle,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct StatsBundle {
     pub global: Option<HashMap<String, UploadStat>>,
     pub players: PlayerStatsBundle,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case", tag = "type", content = "value")]
 pub enum UploadStat {
     IntTotal(i32),
