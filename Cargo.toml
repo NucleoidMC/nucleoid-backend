@@ -5,29 +5,34 @@ authors = ["Gegy <gegy1000@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "0.2", features = ["full"] }
-tokio-util = { version = "0.3", features = ["codec"] }
-warp = "0.2"
-reqwest = { version = "0.10", features = ["rustls-tls", "json"], default-features = false }
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.6", features = ["codec"] }
+warp = "0.3"
+reqwest = { version = "0.11", features = ["rustls-tls", "json"], default-features = false }
 futures = "0.3"
 
-tokio-postgres = "0.5"
+tokio-postgres = "0.7"
+
+mongodb = { version = "2.0.0-beta.1", features = ["bson-uuid-0_8"] }
+bson = { version = "2.0.0-beta.1", features = ["uuid-0_8"] }
 
 byteorder = "1.3"
-bytes = "0.5"
+bytes = "1.0"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+uuid = { version = "0.8", features = ["serde"] }
 
 regex = "1.4"
 lazy_static = "1.4"
 
-serenity = { version = "0.10", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "http", "rustls_tokio_0_2_backend"] }
+serenity = { version = "0.10", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "http", "rustls_backend"] }
 async-trait = "0.1"
 
 xtra = "0.5.0-rc.1"
 
 thiserror = "1.0"
+anyhow = "1.0"
 
 log = "0.4"
 env_logger = "0.7.1"
