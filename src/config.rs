@@ -12,6 +12,7 @@ pub struct Config {
     pub database: Option<DatabaseConfig>,
     #[serde(default = "HashMap::new")]
     pub kickbacks: HashMap<String, Kickback>,
+    pub statistics: Option<StatisticsConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -22,11 +23,20 @@ pub struct DiscordConfig {
     pub relay_channel_topic: bool,
     #[serde(default)]
     pub player_avatar_url: Option<String>,
+    #[serde(default)]
+    pub error_webhook: Option<ErrorWebhookConfig>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ErrorWebhookConfig {
+    pub id: u64,
+    pub token: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WebServerConfig {
     pub port: u16,
+    pub server_tokens: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -48,6 +58,12 @@ pub struct Kickback {
     pub to_server: String,
     pub from_server: String,
     pub proxy_channel: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct StatisticsConfig {
+    pub database_url: String,
+    pub database_name: String,
 }
 
 pub(super) fn load() -> Config {

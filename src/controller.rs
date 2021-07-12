@@ -6,15 +6,17 @@ use xtra::prelude::*;
 
 use crate::Config;
 use crate::database::{self, DatabaseClient};
-use crate::discord::{self, DiscordClient};
+use crate::discord::{self, DiscordClient, ReportError};
 use crate::integrations::{self, IntegrationsClient};
 use crate::model::*;
+use crate::statistics::database::StatisticDatabaseController;
 
 // TODO: use numerical channel ids internally?
 pub struct Controller {
     config: Config,
     discord: Option<Address<DiscordClient>>,
     database: Option<Address<DatabaseClient>>,
+    statistics: Option<Address<StatisticDatabaseController>>,
     integration_clients: HashMap<String, Address<IntegrationsClient>>,
     status_by_channel: HashMap<String, ServerStatus>,
 }
@@ -25,6 +27,7 @@ impl Controller {
             config,
             discord: None,
             database: None,
+            statistics: None,
             integration_clients: HashMap::new(),
             status_by_channel: HashMap::new(),
         }
@@ -72,6 +75,20 @@ pub struct RegisterDatabaseClient {
 
 impl Message for RegisterDatabaseClient {
     type Result = ();
+}
+
+pub struct RegisterStatisticsDatabaseController {
+    pub controller: Address<StatisticDatabaseController>,
+}
+
+impl Message for RegisterStatisticsDatabaseController {
+    type Result = ();
+}
+
+pub struct GetStatisticsDatabaseController;
+
+impl Message for GetStatisticsDatabaseController {
+    type Result = Option<Address<StatisticDatabaseController>>;
 }
 
 pub struct IncomingChat {
@@ -167,6 +184,16 @@ impl Message for GetStatus {
     type Result = Option<ServerStatus>;
 }
 
+pub struct BackendError {
+    pub title: String,
+    pub description: String,
+    pub fields: Option<HashMap<String, String>>,
+}
+
+impl Message for BackendError {
+    type Result = ();
+}
+
 #[async_trait]
 impl Handler<RegisterIntegrationsClient> for Controller {
     async fn handle(&mut self, message: RegisterIntegrationsClient, _ctx: &mut Context<Self>) {
@@ -204,6 +231,20 @@ impl Handler<UnregisterDiscordClient> for Controller {
 impl Handler<RegisterDatabaseClient> for Controller {
     async fn handle(&mut self, message: RegisterDatabaseClient, _ctx: &mut Context<Self>) {
         self.database = Some(message.client);
+    }
+}
+
+#[async_trait]
+impl Handler<RegisterStatisticsDatabaseController> for Controller {
+    async fn handle(&mut self, message: RegisterStatisticsDatabaseController, _ctx: &mut Context<Self>) {
+        self.statistics = Some(message.controller);
+    }
+}
+
+#[async_trait]
+impl Handler<GetStatisticsDatabaseController> for Controller {
+    async fn handle(&mut self, _message: GetStatisticsDatabaseController, _ctx: &mut Context<Self>) -> <GetStatisticsDatabaseController as Message>::Result {
+        self.statistics.clone()
     }
 }
 
@@ -381,5 +422,18 @@ impl Handler<ServerSystemMessage> for Controller {
 impl Handler<GetStatus> for Controller {
     async fn handle(&mut self, message: GetStatus, _ctx: &mut Context<Self>) -> Option<ServerStatus> {
         self.status_by_channel.get(&message.0).cloned()
+    }
+}
+
+#[async_trait]
+impl Handler<BackendError> for Controller {
+    async fn handle(&mut self, message: BackendError, _ctx: &mut Context<Self>) {
+        if let Some(discord) = &self.discord {
+            let _ = discord.do_send_async(ReportError {
+                title: message.title,
+                description: message.description,
+                fields: message.fields,
+            }).await;
+        }
     }
 }
