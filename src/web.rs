@@ -84,7 +84,7 @@ async fn get_player_stats(controller: Address<Controller>, uuid: Uuid, namespace
     }
 }
 
-fn handle_server_error(e: &anyhow::Error) -> Box<dyn warp::Reply> {
+fn handle_server_error(e: &mongodb::error::Error) -> Box<dyn warp::Reply> {
     log::warn!("error handling request: {}", e);
     send_http_status(StatusCode::INTERNAL_SERVER_ERROR)
 }

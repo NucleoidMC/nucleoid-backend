@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
 use async_trait::async_trait;
 use bson::Document;
 use futures::TryStreamExt;
@@ -27,7 +26,7 @@ pub struct StatisticDatabaseController {
 }
 
 impl StatisticDatabaseController {
-    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> Result<Self> {
+    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> mongodb::error::Result<Self> {
         let handler = Self {
             controller: controller.clone(),
             client: Client::with_uri_str(&*config.database_url).await?,
@@ -71,7 +70,7 @@ impl StatisticDatabaseController {
         self.database().collection("corrupt_stats")
     }
 
-    async fn get_player_profile(&self, uuid: &Uuid) -> Result<Option<PlayerProfile>> {
+    async fn get_player_profile(&self, uuid: &Uuid) -> mongodb::error::Result<Option<PlayerProfile>> {
         let options = FindOptions::builder().limit(1).build();
         let profile = self.player_profiles()
             .find(doc! {"uuid": uuid_to_bson(uuid)?}, options).await?
@@ -79,7 +78,7 @@ impl StatisticDatabaseController {
         Ok(profile)
     }
 
-    async fn update_player_profile(&self, uuid: &Uuid, username: Option<String>) -> Result<PlayerProfile> {
+    async fn update_player_profile(&self, uuid: &Uuid, username: Option<String>) -> mongodb::error::Result<PlayerProfile> {
         match self.get_player_profile(uuid).await? {
             Some(profile) => {
                 if let Some(username) = username {
@@ -113,7 +112,7 @@ impl StatisticDatabaseController {
         }
     }
 
-    async fn get_player_stats(&self, uuid: &Uuid, namespace: &Option<String>) -> Result<Option<PlayerStatsResponse>> {
+    async fn get_player_stats(&self, uuid: &Uuid, namespace: &Option<String>) -> mongodb::error::Result<Option<PlayerStatsResponse>> {
         if self.get_player_profile(uuid).await?.is_none() { // player not found.
             return Ok(None);
         }
@@ -141,7 +140,7 @@ impl StatisticDatabaseController {
         Ok(Some(final_stats))
     }
 
-    async fn ensure_player_stats_document(&self, uuid: &Uuid, namespace: &str) -> Result<()> {
+    async fn ensure_player_stats_document(&self, uuid: &Uuid, namespace: &str) -> mongodb::error::Result<()> {
         self.update_player_profile(uuid, None).await?; // Ensure that the player is tracked in the database.
 
         let options = FindOptions::builder().limit(1).build();
@@ -170,7 +169,7 @@ impl StatisticDatabaseController {
         Ok(())
     }
 
-    async fn ensure_global_stats_document(&self, namespace: &str) -> Result<()> {
+    async fn ensure_global_stats_document(&self, namespace: &str) -> mongodb::error::Result<()> {
         let options = FindOptions::builder().limit(1).build();
         let mut res = self.global_stats().find(doc! {
             "namespace": namespace,
@@ -196,7 +195,7 @@ impl StatisticDatabaseController {
         Ok(())
     }
 
-    async fn upload_stats_bundle(&self, bundle: GameStatsBundle) -> Result<()> {
+    async fn upload_stats_bundle(&self, bundle: GameStatsBundle) -> mongodb::error::Result<()> {
         for (player, stats) in bundle.stats.players {
             // Ensure that there is a document to upload stats to.
             self.ensure_player_stats_document(&player, &bundle.namespace).await?;
@@ -220,7 +219,7 @@ impl StatisticDatabaseController {
         Ok(())
     }
 
-    async fn handle_broken_player_stats_document(&self, e: &anyhow::Error, uuid: &Uuid, namespace: &str) -> Result<()> {
+    async fn handle_broken_player_stats_document(&self, e: &mongodb::error::Error, uuid: &Uuid, namespace: &str) -> mongodb::error::Result<()> {
         let doc = self.document_player_stats().find_one(doc! {
             "uuid": uuid_to_bson(uuid)?,
             "namespace": namespace,
@@ -239,7 +238,7 @@ impl StatisticDatabaseController {
         Ok(())
     }
 
-    async fn handle_broken_global_stats_document(&self, e: &anyhow::Error, namespace: &str) -> Result<()> {
+    async fn handle_broken_global_stats_document(&self, e: &mongodb::error::Error, namespace: &str) -> mongodb::error::Result<()> {
         let doc = self.document_global_stats().find_one(doc! {
             "namespace": namespace,
         }, None).await?;
@@ -257,7 +256,7 @@ impl StatisticDatabaseController {
         Ok(())
     }
 
-    async fn handle_broken_document(&self, e: &anyhow::Error, document: &Document, namespace: &str, global: bool) -> Result<()> {
+    async fn handle_broken_document(&self, e: &mongodb::error::Error, document: &Document, namespace: &str, global: bool) -> mongodb::error::Result<()> {
         let mut corrupt_document = document.clone();
         corrupt_document.remove("_id"); // remove the ID so the driver generates a new one when it is re-inserted
         let corrupt_id = self.corrupt_stats().insert_one(document, None).await?.inserted_id;
@@ -282,7 +281,7 @@ impl Actor for StatisticDatabaseController {}
 
 pub struct GetPlayerProfile(pub Uuid);
 impl Message for GetPlayerProfile {
-    type Result = Result<Option<PlayerProfile>>;
+    type Result = mongodb::error::Result<Option<PlayerProfile>>;
 }
 
 #[async_trait]
@@ -298,7 +297,7 @@ pub struct UpdatePlayerProfile {
 }
 
 impl Message for UpdatePlayerProfile {
-    type Result = Result<()>;
+    type Result = mongodb::error::Result<()>;
 }
 
 #[async_trait]
@@ -315,7 +314,7 @@ pub struct GetPlayerStats {
 }
 
 impl Message for GetPlayerStats {
-    type Result = Result<Option<PlayerStatsResponse>>;
+    type Result = mongodb::error::Result<Option<PlayerStatsResponse>>;
 }
 
 #[async_trait]
