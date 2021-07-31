@@ -48,19 +48,23 @@ pub enum GameStat {
         total: i32,
         count: i32,
     },
+    IntMin(i32),
+    IntMax(i32),
     FloatTotal(f64),
     FloatRollingAverage {
         total: f64,
         count: i32,
     },
+    FloatMin(f64),
+    FloatMax(f64),
 }
 
 impl Into<f64> for GameStat {
     fn into(self) -> f64 {
         match self {
-            GameStat::IntTotal(v) => v as f64,
+            GameStat::IntTotal(v) | GameStat::IntMin(v) | GameStat::IntMax(v) => v as f64,
             GameStat::IntRollingAverage { total, count } => (total as f64) / (count as f64),
-            GameStat::FloatTotal(v) => v,
+            GameStat::FloatTotal(v) | GameStat::FloatMin(v) | GameStat::FloatMax(v) => v,
             GameStat::FloatRollingAverage { total, count } => total / (count as f64),
         }
     }
@@ -91,8 +95,12 @@ pub struct StatsBundle {
 #[serde(rename_all = "snake_case", tag = "type", content = "value")]
 pub enum UploadStat {
     IntTotal(i32),
+    IntMin(i32),
+    IntMax(i32),
     IntRollingAverage(i32),
     FloatTotal(f64),
+    FloatMin(f64),
+    FloatMax(f64),
     FloatRollingAverage(f64),
 }
 
