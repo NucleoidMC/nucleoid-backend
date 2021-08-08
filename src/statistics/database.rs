@@ -1,312 +1,208 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use bson::Document;
-use futures::TryStreamExt;
+use chrono::Utc;
+use chrono_tz::Tz;
+use clickhouse_rs::{Block, Pool, row};
 use log::warn;
-use mongodb::{bson::doc, Client, Collection, Database};
-use mongodb::options::FindOptions;
 use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
-use crate::{BackendError, Controller, StatisticsConfig};
-use crate::statistics::model::{GameStatsBundle, GlobalGameStats, PlayerGameStats, PlayerProfile, PlayerStatsResponse};
-use crate::util::uuid_to_bson;
-
-const CORRUPT_STATS_DESCRIPTION: &str = r#"
-The backend detected an invalid statistic document while uploading a bundle.
-It is likely a minigame has changed the type of one of its stored statistics.
-The affected document(s) have been backed up and removed from the database.
-"#;
+use crate::{Controller, StatisticsConfig};
+use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse};
 
 pub struct StatisticDatabaseController {
-    controller: Address<Controller>,
-    client: Client,
-    config: StatisticsConfig,
+    _controller: Address<Controller>,
+    pool: Pool,
+    _config: StatisticsConfig,
 }
 
 impl StatisticDatabaseController {
-    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> mongodb::error::Result<Self> {
+    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> Result<Self, StatisticsDatabaseError> {
         let handler = Self {
-            controller: controller.clone(),
-            client: Client::with_uri_str(&*config.database_url).await?,
-            config: config.clone(),
+            _controller: controller.clone(),
+            pool: Pool::new(config.database_url.clone()),
+            _config: config.clone(),
         };
 
-        // Ping the database to ensure we can connect and so we crash early if we can't
-        handler.client.database("admin")
-            .run_command(doc! {"ping": 1}, None)
-            .await?;
+        initialise_database(&handler.pool).await?;
 
         Ok(handler)
     }
 
-    fn database(&self) -> Database {
-        self.client.database(&*self.config.database_name)
-    }
+    async fn get_player_stats(&self, player_id: &Uuid, namespace: &Option<String>) -> Result<Option<PlayerStatsResponse>, StatisticsDatabaseError> {
+        let mut handle = self.pool.get_handle().await?;
 
-    fn player_profiles(&self) -> Collection<PlayerProfile> {
-        self.database().collection("players")
-    }
+        let cond = match namespace {
+            Some(namespace) => format!("player_id = '{}' AND namespace = '{}'", player_id, namespace),
+            None => format!("player_id = '{}'", player_id),
+        };
 
-    fn player_stats(&self) -> Collection<PlayerGameStats> {
-        self.database().collection("player-stats")
-    }
+        let sql = format!(
+            r#"
+            SELECT
+                namespace,
+                key,
+                SUM(value)
+            FROM player_statistics
+            WHERE
+                {}
+            GROUP BY
+                namespace,
+                key
+            ORDER BY
+                key ASC
+            "#, cond);
 
-    fn global_stats(&self) -> Collection<GlobalGameStats> {
-        self.database().collection("global-stats")
-    }
+        let block = handle.query(sql).fetch_all().await?;
 
-    // Used for error handling
-    fn document_player_stats(&self) -> Collection<Document> {
-        self.database().collection("player-stats")
-    }
-
-    fn document_global_stats(&self) -> Collection<Document> {
-        self.database().collection("global-stats")
-    }
-
-    fn corrupt_stats(&self) -> Collection<Document> {
-        self.database().collection("corrupt_stats")
-    }
-
-    async fn get_player_profile(&self, uuid: &Uuid) -> mongodb::error::Result<Option<PlayerProfile>> {
-        let options = FindOptions::builder().limit(1).build();
-        let profile = self.player_profiles()
-            .find(doc! {"uuid": uuid_to_bson(uuid)?}, options).await?
-            .try_next().await?;
-        Ok(profile)
-    }
-
-    async fn update_player_profile(&self, uuid: &Uuid, username: Option<String>) -> mongodb::error::Result<PlayerProfile> {
-        match self.get_player_profile(uuid).await? {
-            Some(profile) => {
-                if let Some(username) = username {
-                    if let Some(profile_username) = profile.username.clone() {
-                        if username != profile_username {
-                            log::debug!("Player {} updated username to {}", uuid, &username);
-                            self.player_profiles().update_one(
-                                doc! {"uuid": uuid_to_bson(uuid)?},
-                                doc! {"$set": {
-                                    "username": username.clone(),
-                                }},
-                                None,
-                            ).await?;
-
-                            let mut profile = profile.clone();
-                            profile.username = Some(username.clone());
-                            return Ok(profile);
-                        }
-                    }
-                }
-                Ok(profile.clone())
+        let mut result = HashMap::new();
+        for row in block.rows() {
+            let namespace: String = row.get("namespace")?;
+            let key: String = row.get("key")?;
+            let value: f64 = row.get("sum(value)")?;
+            if !result.contains_key(&namespace) {
+                result.insert(namespace.clone(), HashMap::new());
             }
-            None => {
-                let profile = PlayerProfile {
-                    uuid: *uuid,
-                    username: username.clone(),
-                };
-                self.player_profiles().insert_one(&profile, None).await?;
-                Ok(profile)
-            }
+            result.get_mut(&namespace).unwrap().insert(key, value);
+        }
+
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
         }
     }
 
-    async fn get_player_stats(&self, uuid: &Uuid, namespace: &Option<String>) -> mongodb::error::Result<Option<PlayerStatsResponse>> {
-        if self.get_player_profile(uuid).await?.is_none() { // player not found.
+    async fn get_game_stats(&self, game_id: &Uuid) -> Result<Option<HashMap<Uuid, PlayerStatsResponse>>, StatisticsDatabaseError> {
+        let mut handle = self.pool.get_handle().await?;
+
+        let game_sql = format!("SELECT game_id FROM games WHERE game_id = '{}'", game_id);
+
+        if handle.query(game_sql).fetch_all().await?.is_empty() {
             return Ok(None);
         }
 
-        let options = FindOptions::builder().build();
-        let mut stats = self.player_stats().find(match namespace {
-            Some(namespace) => doc! {
-                "uuid": uuid_to_bson(uuid)?,
-                "namespace": namespace.clone(),
-            },
-            None => doc! {
-                "uuid": uuid_to_bson(uuid)?,
-            },
-        }, options).await?;
+        // This should be safe, as although a uuid is potentially-untrusted user input,
+        // they are strictly formed and so no escape characters can be used to break out
+        // of the sql string and manipulate the query.
+        let players_sql = format!(r#"
+            SELECT player_id, namespace, key, value, type
+                FROM player_statistics
+                WHERE game_id = '{}'"#, game_id);
+        let global_sql = format!(r#"
+            SELECT namespace, key, value, type
+                FROM global_statistics
+                WHERE game_id = '{}'"#, game_id);
 
-        let mut final_stats: HashMap<String, HashMap<String, f64>> = HashMap::new();
-        while let Some(stats) = stats.try_next().await? {
-            let mut s = HashMap::new();
-            for (name, stat) in stats.stats {
-                s.insert(name, stat.into());
-            }
-            final_stats.insert(stats.namespace, s);
+        let players_res = handle.query(players_sql).fetch_all().await?;
+        let global_res = handle.query(global_sql).fetch_all().await?;
+
+        if players_res.is_empty() && global_res.is_empty() {
+            return Ok(None);
         }
 
-        Ok(Some(final_stats))
+        let mut players = HashMap::new();
+
+        for row in players_res.rows() {
+            let player_id: Uuid = row.get("player_id")?;
+            let namespace: String = row.get("namespace")?;
+            let key: String = row.get("key")?;
+            let value: f64 = row.get("value")?;
+            // let stat_type: String = row.get("type")?;
+            if !players.contains_key(&player_id) {
+                players.insert(player_id, HashMap::new());
+            }
+            let player_stats = players.get_mut(&player_id).unwrap();
+            if !player_stats.contains_key(&namespace) {
+                player_stats.insert(namespace.clone(), HashMap::new());
+            }
+            let stats = player_stats.get_mut(&namespace).unwrap();
+            stats.insert(key, value);
+        }
+
+        let global_player_id = Uuid::nil();
+        for row in global_res.rows() {
+            let namespace: String = row.get("namespace")?;
+            let key: String = row.get("key")?;
+            let value: f64 = row.get("value")?;
+            // let stat_type: String = row.get("type")?;
+            if !players.contains_key(&global_player_id) {
+                players.insert(global_player_id, HashMap::new());
+            }
+            let player_stats = players.get_mut(&global_player_id).unwrap();
+            if !player_stats.contains_key(&namespace) {
+                player_stats.insert(namespace.clone(), HashMap::new());
+            }
+            let stats = player_stats.get_mut(&namespace).unwrap();
+            stats.insert(key, value);
+        }
+
+        Ok(Some(players))
     }
 
-    async fn ensure_player_stats_document(&self, uuid: &Uuid, namespace: &str) -> mongodb::error::Result<()> {
-        self.update_player_profile(uuid, None).await?; // Ensure that the player is tracked in the database.
+    async fn upload_stats_bundle(&self, server: &String, bundle: GameStatsBundle) -> Result<Uuid, StatisticsDatabaseError> {
+        let mut handle = self.pool.get_handle().await?;
 
-        let options = FindOptions::builder().limit(1).build();
-        let mut res = self.player_stats().find(doc! {
-            "uuid": uuid_to_bson(uuid)?,
-            "namespace": namespace,
-        }, options).await?;
-        let stats = res.try_next().await;
+        let game_id = Uuid::new_v4();
 
-        let needs_new_document = match stats {
-            Ok(stats) => stats.is_none(),
-            Err(e) => {
-                self.handle_broken_player_stats_document(&e.into(), uuid, namespace).await?;
-                true
-            }
-        };
+        // Steps to insert a whole stats bundle
+        {
+            let date_played = Utc::now().with_timezone(&Tz::GMT);
 
-        if needs_new_document {
-            self.player_stats().insert_one(PlayerGameStats {
-                uuid: *uuid,
-                namespace: namespace.to_string(),
-                stats: HashMap::new(),
-            }, None).await?;
+            // 1. Insert a row into the games table and record the allocated ID
+            let mut block = Block::with_capacity(1);
+            block.push(row! {
+                game_id: game_id,
+                namespace: bundle.namespace.clone(),
+                player_count: bundle.stats.players.len() as u32,
+                server: server.clone(),
+                date_played: date_played,
+            })?;
+
+            handle.insert("games", block).await?;
         }
 
-        Ok(())
-    }
-
-    async fn ensure_global_stats_document(&self, namespace: &str) -> mongodb::error::Result<()> {
-        let options = FindOptions::builder().limit(1).build();
-        let mut res = self.global_stats().find(doc! {
-            "namespace": namespace,
-        }, options).await?;
-
-        let stats = res.try_next().await;
-
-        let needs_new_document = match stats {
-            Ok(stats) => stats.is_none(),
-            Err(e) => {
-                self.handle_broken_global_stats_document(&e.into(), &namespace).await?;
-                true
+        {
+            // 2. Insert all player statistics into the player_statistics table
+            let mut block = Block::with_capacity(bundle.stats.players.len());
+            for (player, stats) in bundle.stats.players {
+                for (key, stat) in stats {
+                    let value: f64 = stat.clone().into();
+                    block.push(row! {
+                        game_id: game_id,
+                        player_id: player,
+                        namespace: bundle.namespace.clone(),
+                        key: key.clone(),
+                        value: value,
+                        type: stat.clone().get_type(),
+                    })?;
+                }
             }
-        };
-
-        if needs_new_document {
-            self.global_stats().insert_one(GlobalGameStats {
-                namespace: namespace.to_string(),
-                stats: HashMap::new(),
-            }, None).await?;
+            handle.insert("player_statistics", block).await?;
         }
 
-        Ok(())
-    }
-
-    async fn upload_stats_bundle(&self, bundle: GameStatsBundle) -> mongodb::error::Result<()> {
-        for (player, stats) in bundle.stats.players {
-            // Ensure that there is a document to upload stats to.
-            self.ensure_player_stats_document(&player, &bundle.namespace).await?;
-            for (stat_name, stat) in stats {
-                self.player_stats().update_one(doc! {
-                    "uuid": uuid_to_bson(&player)?,
-                    "namespace": &bundle.namespace,
-                }, stat.create_increment_operation(&stat_name), None).await?;
-            }
-        }
-
+        // 3. Insert all global statistics into the global_statistics table
         if let Some(global) = bundle.stats.global {
-            self.ensure_global_stats_document(&bundle.namespace).await?;
-            for (stat_name, stat) in global {
-                self.global_stats().update_one(doc! {
-                    "namespace": &bundle.namespace,
-                }, stat.create_increment_operation(&stat_name), None).await?;
+            let mut block = Block::with_capacity(global.len());
+            for (key, stat) in global {
+                let value: f64 = stat.clone().into();
+                block.push(row! {
+                    game_id: game_id,
+                    namespace: bundle.namespace.clone(),
+                    key: key.clone(),
+                    value: value,
+                    type: stat.get_type(),
+                })?;
             }
+            handle.insert("global_statistics", block).await?;
         }
 
-        Ok(())
-    }
-
-    async fn handle_broken_player_stats_document(&self, e: &mongodb::error::Error, uuid: &Uuid, namespace: &str) -> mongodb::error::Result<()> {
-        let doc = self.document_player_stats().find_one(doc! {
-            "uuid": uuid_to_bson(uuid)?,
-            "namespace": namespace,
-        }, None).await?;
-
-        if let Some(doc) = doc {
-            self.handle_broken_document(e, &doc, namespace, false).await?;
-            self.document_player_stats().delete_one(doc! {
-                "_id": doc.get("_id").unwrap(),
-            }, None).await?;
-        } else {
-            // This should never happen
-            log::warn!("Missing corrupt document that was there before!? (player: {}, namespace: {})", uuid, namespace);
-        }
-
-        Ok(())
-    }
-
-    async fn handle_broken_global_stats_document(&self, e: &mongodb::error::Error, namespace: &str) -> mongodb::error::Result<()> {
-        let doc = self.document_global_stats().find_one(doc! {
-            "namespace": namespace,
-        }, None).await?;
-
-        if let Some(doc) = doc {
-            self.handle_broken_document(e, &doc, namespace, true).await?;
-            self.document_global_stats().delete_one(doc! {
-                "_id": doc.get("_id").unwrap(),
-            }, None).await?;
-        } else {
-            // This should never happen
-            log::warn!("Missing corrupt document that was there before!? (global; namespace: {})", namespace);
-        }
-
-        Ok(())
-    }
-
-    async fn handle_broken_document(&self, e: &mongodb::error::Error, document: &Document, namespace: &str, global: bool) -> mongodb::error::Result<()> {
-        let mut corrupt_document = document.clone();
-        corrupt_document.remove("_id"); // remove the ID so the driver generates a new one when it is re-inserted
-        let corrupt_id = self.corrupt_stats().insert_one(document, None).await?.inserted_id;
-
-        log::warn!("Corrupt stats document (not our fault, probably a minigame's)!\nError: {}\nDocument: {}\nNamespace: {}, global: {}", e, document, namespace, global);
-        let mut warning_fields: HashMap<String, String> = HashMap::new();
-        warning_fields.insert("Statistic namespace".to_string(), namespace.to_string());
-        warning_fields.insert("Global statistic?".to_string(), global.to_string());
-        warning_fields.insert("Document backup ID".to_string(), corrupt_id.to_string());
-
-        self.controller.send(BackendError {
-            title: ":warning: Corrupt stats document".to_string(),
-            description: CORRUPT_STATS_DESCRIPTION.to_string(),
-            fields: Some(warning_fields),
-        }).await.expect("controller disconnected");
-
-        Ok(())
+        Ok(game_id)
     }
 }
 
 impl Actor for StatisticDatabaseController {}
-
-pub struct GetPlayerProfile(pub Uuid);
-impl Message for GetPlayerProfile {
-    type Result = mongodb::error::Result<Option<PlayerProfile>>;
-}
-
-#[async_trait]
-impl Handler<GetPlayerProfile> for StatisticDatabaseController {
-    async fn handle(&mut self, message: GetPlayerProfile, _ctx: &mut Context<Self>) -> <GetPlayerProfile as Message>::Result {
-        self.get_player_profile(&message.0).await
-    }
-}
-
-pub struct UpdatePlayerProfile {
-    pub uuid: Uuid,
-    pub username: String,
-}
-
-impl Message for UpdatePlayerProfile {
-    type Result = mongodb::error::Result<()>;
-}
-
-#[async_trait]
-impl Handler<UpdatePlayerProfile> for StatisticDatabaseController {
-    async fn handle(&mut self, message: UpdatePlayerProfile, _ctx: &mut Context<Self>) -> <UpdatePlayerProfile as Message>::Result {
-        self.update_player_profile(&message.uuid, Some(message.username)).await?;
-        Ok(())
-    }
-}
 
 pub struct GetPlayerStats {
     pub uuid: Uuid,
@@ -314,7 +210,7 @@ pub struct GetPlayerStats {
 }
 
 impl Message for GetPlayerStats {
-    type Result = mongodb::error::Result<Option<PlayerStatsResponse>>;
+    type Result = Result<Option<PlayerStatsResponse>, StatisticsDatabaseError>;
 }
 
 #[async_trait]
@@ -324,17 +220,42 @@ impl Handler<GetPlayerStats> for StatisticDatabaseController {
     }
 }
 
-pub struct UploadStatsBundle(pub GameStatsBundle);
+pub struct GetGameStats(pub Uuid);
+
+impl Message for GetGameStats {
+    type Result = Result<Option<HashMap<Uuid, PlayerStatsResponse>>, StatisticsDatabaseError>;
+}
+
+#[async_trait]
+impl Handler<GetGameStats> for StatisticDatabaseController {
+    async fn handle(&mut self, message: GetGameStats, _ctx: &mut Context<Self>) -> <GetGameStats as Message>::Result {
+        self.get_game_stats(&message.0).await
+    }
+}
+
+pub struct UploadStatsBundle(pub String, pub GameStatsBundle);
 
 impl Message for UploadStatsBundle {
-    type Result = ();
+    type Result = Uuid;
 }
 
 #[async_trait]
 impl Handler<UploadStatsBundle> for StatisticDatabaseController {
     async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) -> <UploadStatsBundle as Message>::Result {
-        if let Err(e) = self.upload_stats_bundle(message.0.clone()).await {
-            warn!("Failed to upload stats bundle {:?}: {}", message.0, e);
+        match self.upload_stats_bundle(&message.0.clone(), message.1.clone()).await {
+            Ok(game_id) => game_id,
+            Err(e) => {
+                warn!("Failed to upload stats bundle {:?}: {}", message.0, e);
+                Uuid::nil()
+            }
         }
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum StatisticsDatabaseError {
+    #[error("a database error occurred: {0}")]
+    ClickHouseError(#[from] clickhouse_rs::errors::Error),
+    #[error("unknown error")]
+    UnknownError,
 }

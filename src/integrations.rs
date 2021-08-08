@@ -16,6 +16,7 @@ use crate::controller::*;
 use crate::model::*;
 use crate::statistics::model::GameStatsBundle;
 use crate::statistics::database::UploadStatsBundle;
+use uuid::Uuid;
 
 const MAX_FRAME_LENGTH: usize = 4 * 1024 * 1024;
 const FRAME_HEADER_SIZE: usize = 4;
@@ -138,7 +139,10 @@ pub enum IncomingMessage {
         content: String,
     },
     #[serde(rename = "upload_statistics")]
-    UploadStatistics(GameStatsBundle),
+    UploadStatistics {
+        bundle: GameStatsBundle,
+        message_id: i32,
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -161,6 +165,11 @@ pub enum OutgoingMessage {
     SendServerToServer {
         from_server: String,
         to_server: String,
+    },
+    #[serde(rename = "upload_statistics_response")]
+    UploadStatisticsResponse {
+        message_id: i32,
+        game_id: Uuid,
     }
 }
 
@@ -211,7 +220,7 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         let system_message = ServerSystemMessage { channel: self.channel.clone(), content };
                         self.controller.do_send_async(system_message).await
                     }
-                    UploadStatistics(bundle) => {
+                    UploadStatistics { bundle, message_id } => {
                         if let Some(global) = &bundle.stats.global {
                             log::debug!("server '{}' uploaded {} player statistics and {} global statistics in statistics bundle for {}",
                                 self.channel, bundle.stats.players.len(), global.len(), bundle.namespace);
@@ -219,8 +228,21 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                             log::debug!("server '{}' uploaded {} player statistics in statistics bundle for {}",
                                 self.channel, bundle.stats.players.len(), bundle.namespace);
                         }
-                        let upload_bundle_message = UploadStatsBundle(bundle);
-                        self.controller.do_send_async(upload_bundle_message).await
+                        let upload_bundle_message = UploadStatsBundle(self.channel.clone(), bundle);
+                        let res = self.controller.send(upload_bundle_message).await;
+                        match res {
+                            Ok(game_id) => {
+                                let addr = ctx.address().unwrap().clone();
+                                addr.do_send_async(OutgoingMessage::UploadStatisticsResponse {
+                                    message_id,
+                                    game_id,
+                                }).await.unwrap();
+                                Ok(())
+                            },
+                            Err(e) => {
+                                Err(e)
+                            }
+                        }
                     }
                     _ => {
                         warn!("received unexpected message from integrations client: {:?}", message);

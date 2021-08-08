@@ -16,7 +16,6 @@ mod persistent;
 mod config;
 mod database;
 mod statistics;
-mod util;
 
 pub struct TokioGlobal;
 

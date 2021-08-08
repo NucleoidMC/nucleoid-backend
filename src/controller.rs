@@ -10,6 +10,7 @@ use crate::discord::{self, DiscordClient, ReportError};
 use crate::integrations::{self, IntegrationsClient};
 use crate::model::*;
 use crate::statistics::database::{StatisticDatabaseController, UploadStatsBundle};
+use uuid::Uuid;
 
 // TODO: use numerical channel ids internally?
 pub struct Controller {
@@ -440,9 +441,11 @@ impl Handler<BackendError> for Controller {
 
 #[async_trait]
 impl Handler<UploadStatsBundle> for Controller {
-    async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) {
+    async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) -> <UploadStatsBundle as Message>::Result {
         if let Some(statistics) = &self.statistics {
-            let _ = statistics.do_send_async(message).await;
+            statistics.send(message).await.expect("statistics controller disconnected")
+        } else {
+            Uuid::nil()
         }
     }
 }

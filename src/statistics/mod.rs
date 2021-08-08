@@ -1,5 +1,6 @@
-use xtra::{Address, Actor};
-use crate::{Controller, StatisticsConfig, TokioGlobal, RegisterStatisticsDatabaseController};
+use xtra::{Actor, Address};
+
+use crate::{Controller, RegisterStatisticsDatabaseController, StatisticsConfig, TokioGlobal};
 use crate::statistics::database::StatisticDatabaseController;
 
 pub mod model;

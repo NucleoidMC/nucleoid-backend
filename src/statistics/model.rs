@@ -1,83 +1,66 @@
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
-use bson::{Document, doc};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PlayerProfile {
-    #[serde(with = "bson::serde_helpers::uuid_as_binary")]
-    pub uuid: Uuid,
-    pub username: Option<String>,
-}
+use chrono::DateTime;
+use chrono::Utc;
+use clickhouse_rs::Pool;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PlayerProfileResponse {
-    pub uuid: Uuid,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
-}
+pub const CREATE_GAMES_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS games(
+    game_id         UUID DEFAULT generateUUIDv4(),
+    namespace       String,
+    player_count    UInt32,
+    server          String,
+    date_played     DateTime
+) Engine=MergeTree() PRIMARY KEY game_id
+"#;
 
-impl From<PlayerProfile> for PlayerProfileResponse {
-    fn from(p: PlayerProfile) -> Self {
-        Self {
-            uuid: p.uuid,
-            username: p.username,
-        }
-    }
-}
+pub const CREATE_PLAYER_STATS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS player_statistics(
+    statistic_id    UUID DEFAULT generateUUIDv4(),
+    game_id         UUID,
+    player_id       UUID,
+    namespace       String,
+    key             String,
+    value           Float64,
+    type            String
+) Engine=MergeTree() PRIMARY KEY statistic_id
+"#;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PlayerGameStats {
-    #[serde(with = "bson::serde_helpers::uuid_as_binary")]
-    pub uuid: Uuid,
-    pub namespace: String,
-    pub stats: HashMap<String, GameStat>,
-}
+pub const CREATE_GLOBAL_STATS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS global_statistics(
+    statistic_id    UUID DEFAULT generateUUIDv4(),
+    game_id         UUID,
+    namespace       String,
+    key             String,
+    value           Float64,
+    type            String
+) Engine=MergeTree() PRIMARY KEY statistic_id
+"#;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GlobalGameStats {
-    pub namespace: String,
-    pub stats: HashMap<String, GameStat>,
-}
+pub async fn initialise_database(db: &Pool) -> Result<(), clickhouse_rs::errors::Error> {
+    let mut client = db.get_handle().await?;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "type", content = "value", rename_all = "snake_case")]
-pub enum GameStat {
-    IntTotal(i32),
-    IntRollingAverage {
-        total: i32,
-        count: i32,
-    },
-    IntMin(i32),
-    IntMax(i32),
-    FloatTotal(f64),
-    FloatRollingAverage {
-        total: f64,
-        count: i32,
-    },
-    FloatMin(f64),
-    FloatMax(f64),
-}
+    // See if we can connect
+    client.ping().await?;
 
-impl Into<f64> for GameStat {
-    fn into(self) -> f64 {
-        match self {
-            GameStat::IntTotal(v) | GameStat::IntMin(v) | GameStat::IntMax(v) => v as f64,
-            GameStat::IntRollingAverage { total, count } => (total as f64) / (count as f64),
-            GameStat::FloatTotal(v) | GameStat::FloatMin(v) | GameStat::FloatMax(v) => v,
-            GameStat::FloatRollingAverage { total, count } => total / (count as f64),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GlobalStatsBundle {
-    pub namespace: String,
-    pub stats: HashMap<String, GameStat>,
+    client.execute(CREATE_GAMES_TABLE).await?;
+    client.execute(CREATE_PLAYER_STATS_TABLE).await?;
+    client.execute(CREATE_GLOBAL_STATS_TABLE).await?;
+    Ok(())
 }
 
 pub type PlayerStatsResponse = HashMap<String, HashMap<String, f64>>;
 pub type PlayerStatsBundle = HashMap<Uuid, HashMap<String, UploadStat>>;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GameStatsResponse {
+    namespace: String,
+    player_count: i32,
+    server: String,
+    date_played: DateTime<Utc>,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GameStatsBundle {
@@ -105,30 +88,33 @@ pub enum UploadStat {
 }
 
 impl UploadStat {
-    /// Generate a BSON document for increasing this value.
-    pub fn create_increment_operation(&self, id: &str) -> Document {
-        let value_key = format!("stats.{}.value", id);
-        let type_key = format!("stats.{}.type", id);
-        let total_key = format!("{}.total", value_key);
-        let count_key = format!("{}.count", value_key);
-
+    pub fn get_type(&self) -> &str {
         match self {
-            UploadStat::IntTotal(value) => doc! {
-                "$inc": { value_key: value },
-                "$set": { type_key: "int_total" }
-            },
-            UploadStat::IntRollingAverage(value) => doc! {
-                "$inc": { total_key: value, count_key: 1 },
-                "$set": { type_key: "int_rolling_average" }
-            },
-            UploadStat::FloatTotal(value) => doc! {
-                "$inc": { value_key: value },
-                "$set": { type_key: "float_total" }
-            },
-            UploadStat::FloatRollingAverage(value) => doc! {
-                "$inc": { total_key: value, count_key: 1 },
-                "$set": { type_key: "float_rolling_average" }
-            },
+            UploadStat::IntTotal(_) => "int_total",
+            UploadStat::IntMin(_) => "int_min",
+            UploadStat::IntMax(_) => "int_max",
+            UploadStat::IntRollingAverage(_) => "int_rolling_average",
+            UploadStat::FloatTotal(_) => "float_total",
+            UploadStat::FloatMin(_) => "float_min",
+            UploadStat::FloatMax(_) => "float_max",
+            UploadStat::FloatRollingAverage(_) => "float_rolling_average",
+        }
+    }
+}
+
+impl Into<f64> for UploadStat {
+    fn into(self) -> f64 {
+        // I hate this but until anyone else has a better idea then this will stay
+        match self {
+            UploadStat::FloatTotal(v) |
+            UploadStat::FloatMin(v) |
+            UploadStat::FloatMax(v) |
+            UploadStat::FloatRollingAverage(v) => v,
+
+            UploadStat::IntTotal(v) |
+            UploadStat::IntMin(v) |
+            UploadStat::IntMax(v) |
+            UploadStat::IntRollingAverage(v) => v as f64,
         }
     }
 }
