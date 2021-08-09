@@ -141,7 +141,7 @@ pub enum IncomingMessage {
     #[serde(rename = "upload_statistics")]
     UploadStatistics {
         bundle: GameStatsBundle,
-        message_id: i32,
+        game_id: Uuid,
     },
 }
 
@@ -215,7 +215,7 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         let system_message = ServerSystemMessage { channel: self.channel.clone(), content };
                         self.controller.do_send_async(system_message).await
                     }
-                    UploadStatistics { bundle, message_id } => {
+                    UploadStatistics { bundle, game_id } => {
                         if let Some(global) = &bundle.stats.global {
                             log::debug!("server '{}' uploaded {} player statistics and {} global statistics in statistics bundle for {}",
                                 self.channel, bundle.stats.players.len(), global.len(), bundle.namespace);
@@ -223,7 +223,11 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                             log::debug!("server '{}' uploaded {} player statistics in statistics bundle for {}",
                                 self.channel, bundle.stats.players.len(), bundle.namespace);
                         }
-                        let upload_bundle_message = UploadStatsBundle(self.channel.clone(), bundle);
+                        let upload_bundle_message = UploadStatsBundle {
+                            game_id,
+                            bundle,
+                            server: self.channel.clone(),
+                        };
                         self.controller.do_send_async(upload_bundle_message).await
                     }
                     _ => {
