@@ -15,6 +15,7 @@ mod controller;
 mod persistent;
 mod config;
 mod database;
+mod statistics;
 
 pub struct TokioGlobal;
 
@@ -33,11 +34,15 @@ async fn main() {
         .create(None)
         .spawn(&mut TokioGlobal);
 
-    let mut futures = Vec::with_capacity(3);
+    let mut futures = Vec::with_capacity(5);
 
     if let Some(integrations) = config.integrations {
         futures.push(tokio::spawn(integrations::run(controller.clone(), integrations)));
     }
+
+    if let Some(statistics) = config.statistics {
+        futures.push(tokio::spawn(statistics::run(controller.clone(), statistics)));
+    };
 
     if let Some(web) = config.web_server {
         futures.push(tokio::spawn(web::run(controller.clone(), web)));
@@ -48,7 +53,7 @@ async fn main() {
     }
 
     if let Some(database) = config.database {
-        futures.push(tokio::spawn(database::run(controller.clone(), database)))
+        futures.push(tokio::spawn(database::run(controller.clone(), database)));
     }
 
     let _ = futures::future::join_all(futures).await;

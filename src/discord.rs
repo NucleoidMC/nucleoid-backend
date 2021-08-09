@@ -11,7 +11,7 @@ use serde_json::json;
 use serenity::CacheAndHttp;
 use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
-use serenity::model::channel::{Channel, Message as SerenityMessage, ReactionType};
+use serenity::model::channel::{Channel, Message as SerenityMessage, ReactionType, Embed};
 use serenity::model::id::{ChannelId, RoleId};
 use serenity::model::webhook::Webhook;
 use serenity::prelude::*;
@@ -223,6 +223,16 @@ impl XtraMessage for UpdateRelayStatus {
     type Result = ();
 }
 
+pub struct ReportError {
+    pub title: String,
+    pub description: String,
+    pub fields: Option<HashMap<String, String>>,
+}
+
+impl XtraMessage for ReportError {
+    type Result = ();
+}
+
 #[async_trait]
 impl Handler<Init> for DiscordClient {
     async fn handle(&mut self, message: Init, _ctx: &mut XtraContext<Self>) {
@@ -357,6 +367,36 @@ impl Handler<UpdateRelayStatus> for DiscordClient {
                 if let Err(error) = edit_result {
                     error!("failed to update channel topic: {:?}", error);
                 }
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl Handler<ReportError> for DiscordClient {
+    async fn handle(&mut self, message: ReportError, _ctx: &mut XtraContext<Self>) {
+        if let (Some(cache_and_http), Some(webhook_config)) = (&self.cache_and_http, &self.config.error_webhook) {
+            if let Ok(webhook) = &cache_and_http.http.get_webhook_with_token(webhook_config.id, &*webhook_config.token).await {
+                let embed = Embed::fake(|e| {
+                    e.title(message.title);
+                    e.description(message.description);
+                    if let Some(fields) = message.fields {
+                        for (name, value) in fields {
+                            e.field(name, value, false);
+                        }
+                    }
+                    e
+                });
+
+                if let Err(e) = webhook.execute(&cache_and_http.http, false, |w| {
+                    w.embeds(vec![embed]);
+                    w.username("Backend error reporting");
+                    w
+                }).await {
+                    warn!("Failed to report error to discord: {}", e);
+                }
+            } else {
+                warn!("Invalid error reporting webhook config!");
             }
         }
     }

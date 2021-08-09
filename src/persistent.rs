@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::fs::File;
-use tokio::prelude::*;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub trait Persistable: Serialize + DeserializeOwned + Default {}
 
