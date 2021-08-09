@@ -166,11 +166,6 @@ pub enum OutgoingMessage {
         from_server: String,
         to_server: String,
     },
-    #[serde(rename = "upload_statistics_response")]
-    UploadStatisticsResponse {
-        message_id: i32,
-        game_id: Uuid,
-    }
 }
 
 impl Message for OutgoingMessage {
@@ -229,20 +224,7 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                                 self.channel, bundle.stats.players.len(), bundle.namespace);
                         }
                         let upload_bundle_message = UploadStatsBundle(self.channel.clone(), bundle);
-                        let res = self.controller.send(upload_bundle_message).await;
-                        match res {
-                            Ok(game_id) => {
-                                let addr = ctx.address().unwrap().clone();
-                                addr.do_send_async(OutgoingMessage::UploadStatisticsResponse {
-                                    message_id,
-                                    game_id,
-                                }).await.unwrap();
-                                Ok(())
-                            },
-                            Err(e) => {
-                                Err(e)
-                            }
-                        }
+                        self.controller.do_send_async(upload_bundle_message).await
                     }
                     _ => {
                         warn!("received unexpected message from integrations client: {:?}", message);

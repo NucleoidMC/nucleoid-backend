@@ -141,10 +141,8 @@ impl StatisticDatabaseController {
         Ok(Some(players))
     }
 
-    async fn upload_stats_bundle(&self, server: &String, bundle: GameStatsBundle) -> Result<Uuid, StatisticsDatabaseError> {
+    async fn upload_stats_bundle(&self, game_id: Uuid, server: &String, bundle: GameStatsBundle) -> Result<Uuid, StatisticsDatabaseError> {
         let mut handle = self.pool.get_handle().await?;
-
-        let game_id = Uuid::new_v4();
 
         // Steps to insert a whole stats bundle
         {
@@ -233,21 +231,24 @@ impl Handler<GetGameStats> for StatisticDatabaseController {
     }
 }
 
-pub struct UploadStatsBundle(pub String, pub GameStatsBundle);
+#[derive(Debug)]
+pub struct UploadStatsBundle {
+    pub game_id: Uuid,
+    pub server: String,
+    pub bundle: GameStatsBundle,
+}
 
 impl Message for UploadStatsBundle {
-    type Result = Uuid;
+    type Result = ();
 }
 
 #[async_trait]
 impl Handler<UploadStatsBundle> for StatisticDatabaseController {
     async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) -> <UploadStatsBundle as Message>::Result {
-        match self.upload_stats_bundle(&message.0.clone(), message.1.clone()).await {
-            Ok(game_id) => game_id,
-            Err(e) => {
-                warn!("Failed to upload stats bundle {:?}: {}", message.0, e);
-                Uuid::nil()
-            }
+        if let Err(e) = self.upload_stats_bundle(
+            message.game_id, &message.server.clone(), message.bundle.clone()
+        ).await {
+            warn!("Failed to upload stats bundle {:?}: {}", message, e);
         }
     }
 }
