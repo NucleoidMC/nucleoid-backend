@@ -1,0 +1,26 @@
+{
+    "web_server": {
+        "port": 1234
+    },
+    "integrations": {
+        "port": 20000
+    },
+    "database": {
+        "host": "postgres",
+        "port": 5432,
+        "database": "nucleoid",
+        "user": "postgres",
+        "password": "postgres"
+    },
+    "statistics": {
+        "database_url": "tcp://default:@clickhouse:9000/nucleoid?compression=lz4&ping_timeout=42ms",
+        "database_name": "nucleoid"
+    },
+    "kickbacks": {
+        "play": {
+            "to_server": "play",
+            "from_server": "fallback",
+            "proxy_channel": "proxy"
+        }
+    }
+}

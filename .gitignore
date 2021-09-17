@@ -3,3 +3,4 @@
 
 config.json
 relay.json
+!config/config.json

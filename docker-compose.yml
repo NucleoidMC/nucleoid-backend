@@ -1,0 +1,39 @@
+version: '3'
+
+services:
+  postgres:
+    image: postgres
+    # uncomment to access postgres from the host machine
+    # ports:
+    #   - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nucleoid
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+  clickhouse:
+    image: yandex/clickhouse-server
+    # uncomment to access clickhouse database from the host machine
+    # ports:
+    #   - 8123:8123
+    #   - 9000:9000
+    environment:
+      CLICKHOUSE_DB: nucleoid
+    volumes:
+      - ./clickhouse_data:/var/lib/clickhouse
+  backend:
+    build: .
+    volumes:
+      - ./config:/srv/backend/run
+    ports:
+      - 20000:20000
+      - 1234:1234
+    environment:
+      RUST_LOG: info
+      WAIT_HOSTS: postgres:5432, clickhouse:9000
+      # wait 10s to give time for postgres and clickhouse to finish loading up.
+      WAIT_AFTER: 10
+    depends_on:
+      - postgres
+      - clickhouse
