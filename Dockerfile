@@ -22,8 +22,6 @@ COPY . .
 
 RUN cargo build --release
 
-# RUN mkdir /srv/backend/run
-
 VOLUME [ "/srv/backend/run" ]
 
 WORKDIR /srv/backend/run
