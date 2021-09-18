@@ -4,6 +4,12 @@ version = "0.1.0"
 authors = ["Gegy <gegy1000@gmail.com>"]
 edition = "2018"
 
+
+# Needed for docker.
+[[bin]]
+name = "nucleoid-backend"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.6", features = ["codec"] }
