@@ -1,6 +1,7 @@
 {
     "web_server": {
-        "port": 1234
+        "port": 1234,
+        "max_query_size": 50
     },
     "integrations": {
         "port": 20000

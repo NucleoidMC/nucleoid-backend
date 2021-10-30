@@ -55,14 +55,6 @@ pub type PlayerStatsResponse = HashMap<String, HashMap<String, f64>>;
 pub type PlayerStatsBundle = HashMap<Uuid, HashMap<String, UploadStat>>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GameStatsResponse {
-    namespace: String,
-    player_count: i32,
-    server: String,
-    date_played: DateTime<Utc>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GameStatsBundle {
     pub namespace: String,
     pub stats: StatsBundle,
@@ -72,6 +64,15 @@ pub struct GameStatsBundle {
 pub struct StatsBundle {
     pub global: Option<HashMap<String, UploadStat>>,
     pub players: PlayerStatsBundle,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RecentGame {
+    pub id: Uuid,
+    pub namespace: String,
+    pub players: Vec<Uuid>,
+    pub server: String,
+    pub date_played: DateTime<Utc>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
