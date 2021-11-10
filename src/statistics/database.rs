@@ -74,15 +74,39 @@ impl StatisticDatabaseController {
         }
     }
 
-    async fn get_recent_games(&self, limit: u32) -> StatisticsDatabaseResult<Vec<RecentGame>> {
+    async fn get_recent_games(&self, limit: u32, player_id: Option<Uuid>) -> StatisticsDatabaseResult<Vec<RecentGame>> {
         let mut handle = self.pool.get_handle().await?;
 
-        let sql = format!(r#"
-        SELECT *
-        FROM games
-        ORDER BY date_played DESC
-        LIMIT {}
-        "#, limit);
+        let sql = match player_id {
+            Some(player_id) => format!(r#"
+            SELECT
+                game_id,
+                namespace,
+                player_count,
+                server,
+                date_played
+            FROM
+                player_statistics
+            INNER JOIN games
+                ON player_statistics.game_id=games.game_id
+            WHERE
+                player_id = '{}'
+            GROUP BY
+                game_id,
+                namespace,
+                player_count,
+                server,
+                date_played
+            ORDER BY date_played DESC
+            LIMIT {}
+            "#, player_id, limit),
+            None => format!(r#"
+                SELECT *
+                FROM games
+                ORDER BY date_played DESC
+                LIMIT {}
+                "#, limit),
+        };
 
         let games_res = handle.query(sql).fetch_all().await?;
 
@@ -283,7 +307,10 @@ impl Handler<GetGameStats> for StatisticDatabaseController {
     }
 }
 
-pub struct GetRecentGames(pub u32);
+pub struct GetRecentGames {
+    pub limit: u32,
+    pub player_id: Option<Uuid>,
+}
 
 impl Message for GetRecentGames {
     type Result = StatisticsDatabaseResult<Vec<RecentGame>>;
@@ -292,7 +319,7 @@ impl Message for GetRecentGames {
 #[async_trait]
 impl Handler<GetRecentGames> for StatisticDatabaseController {
     async fn handle(&mut self, message: GetRecentGames, _ctx: &mut Context<Self>) -> <GetRecentGames as Message>::Result {
-        self.get_recent_games(message.0).await
+        self.get_recent_games(message.limit, message.player_id).await
     }
 }
 

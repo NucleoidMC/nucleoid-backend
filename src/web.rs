@@ -50,7 +50,7 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .and_then({
             let controller = controller.clone();
             let config = config.clone();
-            move |query: LimitQuery| get_recent_games(controller.clone(), config.clone(), query.limit)
+            move |query: RecentGamesQuery| get_recent_games(controller.clone(), config.clone(), query)
         }).with(&cors);
 
     let combined = status
@@ -135,8 +135,8 @@ async fn get_game_stats(controller: Address<Controller>, uuid: Uuid) -> ApiResul
     }
 }
 
-async fn get_recent_games(controller: Address<Controller>, config: WebServerConfig, limit: u32) -> ApiResult {
-    if limit > config.max_query_size {
+async fn get_recent_games(controller: Address<Controller>, config: WebServerConfig, query: RecentGamesQuery) -> ApiResult {
+    if query.limit > config.max_query_size {
         return Ok(send_http_status(StatusCode::BAD_REQUEST));
     }
 
@@ -147,7 +147,10 @@ async fn get_recent_games(controller: Address<Controller>, config: WebServerConf
         return Ok(send_http_status(StatusCode::NOT_FOUND));
     };
 
-    let res = statistics.send(GetRecentGames(limit)).await.unwrap();
+    let res = statistics.send(GetRecentGames {
+        limit: query.limit,
+        player_id: query.player,
+    }).await.unwrap();
     return match res {
         Ok(games) => {
             Ok(Box::new(warp::reply::json(&games)))
@@ -159,8 +162,9 @@ async fn get_recent_games(controller: Address<Controller>, config: WebServerConf
 }
 
 #[derive(Deserialize)]
-struct LimitQuery {
+struct RecentGamesQuery {
     limit: u32,
+    player: Option<Uuid>,
 }
 
 fn handle_server_error(e: &StatisticsDatabaseError) -> Box<dyn warp::Reply> {
