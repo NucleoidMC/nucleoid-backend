@@ -36,6 +36,7 @@ pub struct ErrorWebhookConfig {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WebServerConfig {
     pub port: u16,
+    pub max_query_size: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

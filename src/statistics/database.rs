@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{Block, Pool, row};
 use log::warn;
@@ -9,7 +9,7 @@ use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
 use crate::{Controller, StatisticsConfig};
-use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse};
+use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame};
 
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
@@ -18,7 +18,7 @@ pub struct StatisticDatabaseController {
 }
 
 impl StatisticDatabaseController {
-    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> Result<Self, StatisticsDatabaseError> {
+    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> StatisticsDatabaseResult<Self> {
         let handler = Self {
             _controller: controller.clone(),
             pool: Pool::new(config.database_url.clone()),
@@ -30,7 +30,7 @@ impl StatisticDatabaseController {
         Ok(handler)
     }
 
-    async fn get_player_stats(&self, player_id: &Uuid, namespace: &Option<String>) -> Result<Option<PlayerStatsResponse>, StatisticsDatabaseError> {
+    async fn get_player_stats(&self, player_id: &Uuid, namespace: &Option<String>) -> StatisticsDatabaseResult<Option<PlayerStatsResponse>> {
         let mut handle = self.pool.get_handle().await?;
 
         let cond = match namespace {
@@ -74,7 +74,83 @@ impl StatisticDatabaseController {
         }
     }
 
-    async fn get_game_stats(&self, game_id: &Uuid) -> Result<Option<HashMap<Uuid, PlayerStatsResponse>>, StatisticsDatabaseError> {
+    async fn get_recent_games(&self, limit: u32, player_id: Option<Uuid>) -> StatisticsDatabaseResult<Vec<RecentGame>> {
+        let mut handle = self.pool.get_handle().await?;
+
+        let sql = match player_id {
+            Some(player_id) => format!(r#"
+            SELECT
+                game_id,
+                namespace,
+                player_count,
+                server,
+                date_played
+            FROM
+                player_statistics
+            INNER JOIN games
+                ON player_statistics.game_id=games.game_id
+            WHERE
+                player_id = '{}'
+            GROUP BY
+                game_id,
+                namespace,
+                player_count,
+                server,
+                date_played
+            ORDER BY date_played DESC
+            LIMIT {}
+            "#, player_id, limit),
+            None => format!(r#"
+                SELECT *
+                FROM games
+                ORDER BY date_played DESC
+                LIMIT {}
+                "#, limit),
+        };
+
+        let games_res = handle.query(sql).fetch_all().await?;
+
+        if games_res.is_empty() {
+            return Ok(Vec::with_capacity(0));
+        }
+
+        let mut games = Vec::new();
+
+        for row in games_res.rows() {
+            let game_id: Uuid = row.get("game_id")?;
+            let namespace: String = row.get("namespace")?;
+            let player_count: u32 = row.get("player_count")?;
+            let server: String = row.get("server")?;
+            let date_played: DateTime<Tz> = row.get("date_played")?;
+
+            let players_sql = format!(r#"
+            SELECT player_id
+            FROM player_statistics
+            WHERE game_id = '{}'
+            GROUP BY player_id
+            "#, game_id);
+
+            let players_res = handle.query(players_sql).fetch_all().await?;
+            let mut players = Vec::with_capacity(player_count as usize);
+            for player_id in players_res.rows().map(|row| row.get::<Uuid, _>("player_id")) {
+                players.push(player_id?);
+            }
+
+            games.push(RecentGame {
+                id: game_id,
+                namespace,
+                players,
+                server,
+                date_played: date_played.with_timezone(&Utc),
+            });
+        }
+
+        Ok(games)
+    }
+
+    // TODO: Query player's recent games
+
+    async fn get_game_stats(&self, game_id: &Uuid) -> StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>> {
         let mut handle = self.pool.get_handle().await?;
 
         let game_sql = format!("SELECT game_id FROM games WHERE game_id = '{}'", game_id);
@@ -141,7 +217,7 @@ impl StatisticDatabaseController {
         Ok(Some(players))
     }
 
-    async fn upload_stats_bundle(&self, game_id: Uuid, server: &String, bundle: GameStatsBundle) -> Result<Uuid, StatisticsDatabaseError> {
+    async fn upload_stats_bundle(&self, game_id: Uuid, server: &String, bundle: GameStatsBundle) -> StatisticsDatabaseResult<Uuid> {
         let mut handle = self.pool.get_handle().await?;
 
         // Steps to insert a whole stats bundle
@@ -208,7 +284,7 @@ pub struct GetPlayerStats {
 }
 
 impl Message for GetPlayerStats {
-    type Result = Result<Option<PlayerStatsResponse>, StatisticsDatabaseError>;
+    type Result = StatisticsDatabaseResult<Option<PlayerStatsResponse>>;
 }
 
 #[async_trait]
@@ -221,13 +297,29 @@ impl Handler<GetPlayerStats> for StatisticDatabaseController {
 pub struct GetGameStats(pub Uuid);
 
 impl Message for GetGameStats {
-    type Result = Result<Option<HashMap<Uuid, PlayerStatsResponse>>, StatisticsDatabaseError>;
+    type Result = StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>>;
 }
 
 #[async_trait]
 impl Handler<GetGameStats> for StatisticDatabaseController {
     async fn handle(&mut self, message: GetGameStats, _ctx: &mut Context<Self>) -> <GetGameStats as Message>::Result {
         self.get_game_stats(&message.0).await
+    }
+}
+
+pub struct GetRecentGames {
+    pub limit: u32,
+    pub player_id: Option<Uuid>,
+}
+
+impl Message for GetRecentGames {
+    type Result = StatisticsDatabaseResult<Vec<RecentGame>>;
+}
+
+#[async_trait]
+impl Handler<GetRecentGames> for StatisticDatabaseController {
+    async fn handle(&mut self, message: GetRecentGames, _ctx: &mut Context<Self>) -> <GetRecentGames as Message>::Result {
+        self.get_recent_games(message.limit, message.player_id).await
     }
 }
 
@@ -260,3 +352,5 @@ pub enum StatisticsDatabaseError {
     #[error("unknown error")]
     UnknownError,
 }
+
+pub type StatisticsDatabaseResult<T> = Result<T, StatisticsDatabaseError>;
