@@ -148,8 +148,6 @@ impl StatisticDatabaseController {
         Ok(games)
     }
 
-    // TODO: Query player's recent games
-
     async fn get_game_stats(&self, game_id: &Uuid) -> StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>> {
         let mut handle = self.pool.get_handle().await?;
 
