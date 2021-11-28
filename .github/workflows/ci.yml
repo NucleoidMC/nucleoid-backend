@@ -31,6 +31,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
+          args: --release
       - name: Upload artifacts (Linux only)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v2
