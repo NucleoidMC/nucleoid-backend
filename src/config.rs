@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -64,6 +64,7 @@ pub struct Kickback {
 pub struct StatisticsConfig {
     pub database_url: String,
     pub database_name: String,
+    pub leaderboards_dir: Option<PathBuf>,
 }
 
 pub(super) fn load() -> Config {

@@ -5,24 +5,29 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{Block, Pool, row};
 use log::warn;
+use nucleoid_leaderboards::model::LeaderboardDefinition;
 use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
 use crate::{Controller, StatisticsConfig};
+use crate::statistics::leaderboards::{LeaderboardEntry, LeaderboardGenerator};
 use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame};
 
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
     pool: Pool,
     _config: StatisticsConfig,
+    leaderboards: LeaderboardGenerator,
 }
 
 impl StatisticDatabaseController {
-    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> StatisticsDatabaseResult<Self> {
+    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig, leaderboards: Vec<LeaderboardDefinition>) -> StatisticsDatabaseResult<Self> {
+        let pool = Pool::new(config.database_url.clone());
         let handler = Self {
             _controller: controller.clone(),
-            pool: Pool::new(config.database_url.clone()),
+            pool: pool.clone(),
             _config: config.clone(),
+            leaderboards: LeaderboardGenerator::new(pool.clone(), leaderboards),
         };
 
         initialise_database(&handler.pool).await?;
@@ -340,6 +345,19 @@ impl Handler<UploadStatsBundle> for StatisticDatabaseController {
         ).await {
             warn!("Failed to upload stats bundle {:?}: {}", message, e);
         }
+    }
+}
+
+pub struct GetLeaderboard(pub String);
+
+impl Message for GetLeaderboard {
+    type Result = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
+}
+
+#[async_trait]
+impl Handler<GetLeaderboard> for StatisticDatabaseController {
+    async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> <GetLeaderboard as Message>::Result {
+        self.leaderboards.build_leaderboard(&message.0).await
     }
 }
 
