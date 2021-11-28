@@ -1,11 +1,11 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warp::Filter;
 use warp::http::StatusCode;
 use xtra::prelude::*;
 
 use crate::controller::*;
-use crate::statistics::database::{GetGameStats, GetPlayerStats, GetRecentGames, StatisticsDatabaseError};
+use crate::statistics::database::{GetGameStats, GetPlayerStats, GetRecentGames, StatisticDatabaseController, StatisticsDatabaseError, StatisticsDatabaseResult};
 use crate::WebServerConfig;
 
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
@@ -79,12 +79,7 @@ async fn get_status(controller: Address<Controller>, channel: String) -> ApiResu
 type ApiResult = Result<Box<dyn warp::Reply>, warp::Rejection>;
 
 async fn get_player_stats(controller: Address<Controller>, uuid: Uuid, namespace: Option<String>) -> ApiResult {
-    let statistics = if let Some(statistics) = controller.send(GetStatisticsDatabaseController)
-        .await.expect("controller disconnected") {
-        statistics
-    } else {
-        return Ok(send_http_status(StatusCode::NOT_FOUND));
-    };
+    let statistics = get_statistics_controller(controller).await?;
 
     if let Some(namespace) = &namespace {
         for c in namespace.chars() {
@@ -98,41 +93,13 @@ async fn get_player_stats(controller: Address<Controller>, uuid: Uuid, namespace
         uuid,
         namespace,
     }).await.unwrap();
-    return match res {
-        Ok(stats) => {
-            Ok(if let Some(stats) = stats {
-                Box::new(warp::reply::json(&stats))
-            } else {
-                send_http_status(StatusCode::NOT_FOUND)
-            })
-        },
-        Err(e) => {
-            Ok(handle_server_error(&e))
-        }
-    }
+    handle_statistics_option_result(res)
 }
 
 async fn get_game_stats(controller: Address<Controller>, uuid: Uuid) -> ApiResult {
-    let statistics = if let Some(statistics) = controller.send(GetStatisticsDatabaseController)
-        .await.expect("controller disconnected") {
-        statistics
-    } else {
-        return Ok(send_http_status(StatusCode::NOT_FOUND));
-    };
-
+    let statistics = get_statistics_controller(controller).await?;
     let res = statistics.send(GetGameStats(uuid)).await.unwrap();
-    return match res {
-        Ok(stats) => {
-            Ok(if let Some(stats) = stats {
-                Box::new(warp::reply::json(&stats))
-            } else {
-                send_http_status(StatusCode::NOT_FOUND)
-            })
-        },
-        Err(e) => {
-            Ok(handle_server_error(&e))
-        }
-    }
+    handle_statistics_option_result(res)
 }
 
 async fn get_recent_games(controller: Address<Controller>, config: WebServerConfig, query: RecentGamesQuery) -> ApiResult {
@@ -140,31 +107,44 @@ async fn get_recent_games(controller: Address<Controller>, config: WebServerConf
         return Ok(send_http_status(StatusCode::BAD_REQUEST));
     }
 
-    let statistics = if let Some(statistics) = controller.send(GetStatisticsDatabaseController)
-        .await.expect("controller disconnected") {
-        statistics
-    } else {
-        return Ok(send_http_status(StatusCode::NOT_FOUND));
-    };
+    let statistics = get_statistics_controller(controller).await?;
 
     let res = statistics.send(GetRecentGames {
         limit: query.limit,
         player_id: query.player,
     }).await.unwrap();
-    return match res {
-        Ok(games) => {
-            Ok(Box::new(warp::reply::json(&games)))
-        },
-        Err(e) => {
-            Ok(handle_server_error(&e))
-        }
-    }
+    handle_statistics_result(res)
 }
 
 #[derive(Deserialize)]
 struct RecentGamesQuery {
     limit: u32,
     player: Option<Uuid>,
+}
+
+async fn get_statistics_controller(controller: Address<Controller>) -> Result<Address<StatisticDatabaseController>, warp::Rejection> {
+    if let Some(statistics) = controller.send(GetStatisticsDatabaseController).await.expect("controller disconnected") {
+        Ok(statistics)
+    } else {
+        Err(warp::reject::not_found())
+    }
+}
+
+fn handle_statistics_result<T>(result: StatisticsDatabaseResult<T>) -> ApiResult
+    where T: Serialize {
+    match result {
+        Ok(t) => Ok(Box::new(warp::reply::json(&t))),
+        Err(e) => Ok(handle_server_error(&e)),
+    }
+}
+
+fn handle_statistics_option_result<T>(result: StatisticsDatabaseResult<Option<T>>) -> ApiResult
+    where T: Serialize {
+    match result {
+        Ok(Some(t)) => Ok(Box::new(warp::reply::json(&t))),
+        Ok(None) => Err(warp::reject::not_found()),
+        Err(e) => Ok(handle_server_error(&e)),
+    }
 }
 
 fn handle_server_error(e: &StatisticsDatabaseError) -> Box<dyn warp::Reply> {
