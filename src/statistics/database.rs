@@ -9,7 +9,7 @@ use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
 use crate::{Controller, StatisticsConfig};
-use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame};
+use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame, StatisticCounts, StatisticsStats};
 
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
@@ -272,6 +272,40 @@ impl StatisticDatabaseController {
 
         Ok(game_id)
     }
+
+    async fn get_statistics_stats(&self) -> StatisticsDatabaseResult<StatisticsStats> {
+        let mut handle = self.pool.get_handle().await?;
+        let player_results = handle.query(r#"
+        SELECT COUNT(DISTINCT player_id) AS unique_players,
+            COUNT(*) AS total_entries,
+            SUM(value) AS grand_total
+        FROM player_statistics"#).fetch_all().await?;
+        let game_results = handle.query("SELECT COUNT(*) AS games_played FROM games").fetch_all().await?;
+        let global_results = handle.query("SELECT COUNT(*) AS total_entries, SUM(value) as grand_total FROM global_statistics").fetch_all().await?;
+
+        let unique_players = player_results.get(0, "unique_players")?;
+        let games_played = game_results.get(0, "games_played")?;
+        let player_entries = player_results.get(0, "total_entries")?;
+        let global_entries = global_results.get(0, "total_entries")?;
+        let total_entries = player_entries + global_entries;
+        let player_total = player_results.get(0, "grand_total")?;
+        let global_total = global_results.get(0, "grand_total")?;
+        let grand_total = player_total + global_total;
+        Ok(StatisticsStats {
+            unique_players,
+            games_played,
+            entries: StatisticCounts {
+                player: player_entries,
+                global: global_entries,
+                total: total_entries,
+            },
+            grand_total: StatisticCounts {
+                player: player_total,
+                global: global_total,
+                total: grand_total,
+            },
+        })
+    }
 }
 
 impl Actor for StatisticDatabaseController {}
@@ -340,6 +374,19 @@ impl Handler<UploadStatsBundle> for StatisticDatabaseController {
         ).await {
             warn!("Failed to upload stats bundle {:?}: {}", message, e);
         }
+    }
+}
+
+pub struct GetStatisticsStats;
+
+impl Message for GetStatisticsStats {
+    type Result = StatisticsDatabaseResult<StatisticsStats>;
+}
+
+#[async_trait]
+impl Handler<GetStatisticsStats> for StatisticDatabaseController {
+    async fn handle(&mut self, _message: GetStatisticsStats, _ctx: &mut Context<Self>) -> <GetStatisticsStats as Message>::Result {
+        self.get_statistics_stats().await
     }
 }
 

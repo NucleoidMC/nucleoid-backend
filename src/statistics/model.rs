@@ -119,3 +119,18 @@ impl Into<f64> for UploadStat {
         }
     }
 }
+
+#[derive(Serialize)]
+pub struct StatisticsStats {
+    pub unique_players: u64,
+    pub games_played: u64,
+    pub entries: StatisticCounts<u64>,
+    pub grand_total: StatisticCounts<f64>,
+}
+
+#[derive(Serialize)]
+pub struct StatisticCounts<T> {
+    pub player: T,
+    pub global: T,
+    pub total: T,
+}
