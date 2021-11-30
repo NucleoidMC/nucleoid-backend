@@ -5,7 +5,7 @@ use warp::http::StatusCode;
 use xtra::prelude::*;
 
 use crate::controller::*;
-use crate::statistics::database::{GetGameStats, GetLeaderboard, GetPlayerStats, GetRecentGames, StatisticDatabaseController, StatisticsDatabaseError, StatisticsDatabaseResult};
+use crate::statistics::database::{GetGameStats, GetLeaderboard, GetPlayerStats, GetRecentGames, GetStatisticsStats, StatisticDatabaseController, StatisticsDatabaseError, StatisticsDatabaseResult};
 use crate::WebServerConfig;
 
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
@@ -60,11 +60,19 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             move |id| get_leaderboard(controller.clone(), id)
         }).with(&cors);
 
+    let get_statistics_stats = warp::path("stats")
+        .and(warp::path("stats"))
+        .and_then({
+            let controller = controller.clone();
+            move || get_statistics_stats(controller.clone())
+        }).with(&cors);
+
     let combined = status
         .or(player_game_stats)
         .or(all_player_game_stats)
         .or(all_game_stats)
         .or(get_recent_games)
+        .or(get_statistics_stats)
         .or(leaderboard);
 
     warp::serve(combined)
@@ -121,6 +129,12 @@ async fn get_recent_games(controller: Address<Controller>, config: WebServerConf
         limit: query.limit,
         player_id: query.player,
     }).await.unwrap();
+    handle_statistics_result(res)
+}
+
+async fn get_statistics_stats(controller: Address<Controller>) -> ApiResult {
+    let statistics = get_statistics_controller(controller).await?;
+    let res = statistics.send(GetStatisticsStats).await.expect("controller disconnected");
     handle_statistics_result(res)
 }
 
