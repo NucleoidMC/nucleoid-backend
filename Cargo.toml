@@ -42,7 +42,7 @@ log = "0.4"
 env_logger = "0.7.1"
 
 walkdir = "2"
-nucleoid-leaderboards = { path = "../nucleoid-leaderboards" }
+nucleoid-leaderboards = { git = "https://github.com/NucleoidMC/nucleoid-leaderboards.git" }
 
 # The latest release on crates.io doesn't have support for serialising DateTime
 [dependencies.clickhouse-rs]
