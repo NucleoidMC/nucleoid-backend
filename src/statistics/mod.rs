@@ -11,8 +11,8 @@ pub mod model;
 pub mod database;
 pub mod leaderboards;
 
-pub async fn run(controller: Address<Controller>, config: StatisticsConfig) {
-    let statistics_database = StatisticDatabaseController::connect(&controller, &config, load_leaderboards(&config)).await
+pub async fn run(controller: Address<Controller>, config: StatisticsConfig, postgres_pool: deadpool_postgres::Pool) {
+    let statistics_database = StatisticDatabaseController::connect(&controller, postgres_pool, &config, load_leaderboards(&config)).await
         .expect("failed to connect to statistics database")
         .create(None)
         .spawn(&mut TokioGlobal);

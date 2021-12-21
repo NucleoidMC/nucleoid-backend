@@ -1,6 +1,8 @@
+pub mod database;
+
 use std::collections::HashMap;
 
-use clickhouse_rs::Pool;
+use futures::{Stream, StreamExt};
 use nucleoid_leaderboards::model::{Aggregate, LeaderboardDefinition, LeaderboardQuery, Ranking, UnitConversion, ValueType};
 use serde::Serialize;
 use uuid::Uuid;
@@ -8,12 +10,11 @@ use uuid::Uuid;
 use crate::statistics::database::StatisticsDatabaseResult;
 
 pub struct LeaderboardGenerator {
-    pool: Pool,
     definitions: HashMap<String, (LeaderboardDefinition, LeaderboardSql)>,
 }
 
 impl LeaderboardGenerator {
-    pub fn new(pool: Pool, definitions: Vec<LeaderboardDefinition>) -> Self {
+    pub fn new(definitions: Vec<LeaderboardDefinition>) -> Self {
         let mut definitions_map = HashMap::new();
 
         for definition in definitions {
@@ -25,32 +26,32 @@ impl LeaderboardGenerator {
         }
 
         Self {
-            pool,
             definitions: definitions_map,
         }
     }
 
-    pub async fn build_leaderboard(&self, id: &str) -> StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>> {
+    pub async fn build_leaderboard<'a>(&self, handle: &'a mut clickhouse_rs::ClientHandle, id: &str) -> StatisticsDatabaseResult<Option<impl Stream<Item = StatisticsDatabaseResult<LeaderboardEntry>> + 'a>> {
         let sql = match self.definitions.get(id) {
-            Some(sql) => &sql.1,
+            Some(sql) => sql.1.clone(),
             None => return Ok(None),
         };
 
-        let mut handle = self.pool.get_handle().await?;
-        let mut leaderboard = Vec::new();
-
-        let result = handle.query(&sql.sql).fetch_all().await?;
-        for row in result.rows() {
+        let stream = handle.query(&sql.sql).stream().map(move |row|  {
+            let row = row?;
             let player_id: Uuid = row.get(&*sql.player)?;
             let value = match sql.value_type {
                 ValueType::Int => row.get::<i64, _>(&*sql.value)? as f64,
                 ValueType::UInt => row.get::<u64, _>(&*sql.value)? as f64,
                 ValueType::Float => row.get::<f64, _>(&*sql.value)?,
             };
-            leaderboard.push(LeaderboardEntry { player_id, value });
-        }
+            Ok(LeaderboardEntry { player_id, value })
+        });
 
-        Ok(Some(leaderboard))
+        Ok(Some(stream))
+    }
+
+    pub fn list_all_leaderboards(&self) -> Vec<&String> {
+        self.definitions.keys().collect::<Vec<_>>()
     }
 }
 
@@ -130,6 +131,7 @@ fn ranking_sql(ranking: &Ranking) -> &'static str {
     }
 }
 
+#[derive(Clone)]
 struct LeaderboardSql {
     sql: String,
     player: String,

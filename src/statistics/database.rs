@@ -10,24 +10,25 @@ use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
 use crate::{Controller, StatisticsConfig};
-use crate::statistics::leaderboards::{LeaderboardEntry, LeaderboardGenerator};
+use crate::statistics::leaderboards::database::LeaderboardsDatabase;
 use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame, StatisticCounts, StatisticsStats};
 
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
     pool: Pool,
     _config: StatisticsConfig,
-    leaderboards: LeaderboardGenerator,
+    leaderboards: LeaderboardsDatabase,
 }
 
 impl StatisticDatabaseController {
-    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig, leaderboards: Vec<LeaderboardDefinition>) -> StatisticsDatabaseResult<Self> {
+    pub async fn connect(controller: &Address<Controller>, postgres_pool: deadpool_postgres::Pool, config: &StatisticsConfig, leaderboards: Vec<LeaderboardDefinition>) -> StatisticsDatabaseResult<Self> {
         let pool = Pool::new(config.database_url.clone());
+
         let handler = Self {
             _controller: controller.clone(),
             pool: pool.clone(),
             _config: config.clone(),
-            leaderboards: LeaderboardGenerator::new(pool.clone(), leaderboards),
+            leaderboards: LeaderboardsDatabase::new(postgres_pool.clone(), pool, leaderboards).await?,
         };
 
         initialise_database(&handler.pool).await?;
@@ -395,16 +396,29 @@ impl Handler<GetStatisticsStats> for StatisticDatabaseController {
     }
 }
 
-pub struct GetLeaderboard(pub String);
+// pub struct GetLeaderboard(pub String);
+//
+// impl Message for GetLeaderboard {
+//     type Result = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
+// }
+//
+// #[async_trait]
+// impl Handler<GetLeaderboard> for StatisticDatabaseController {
+//     async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> <GetLeaderboard as Message>::Result {
+//         self.leaderboards.build_leaderboard(&message.0).await
+//     }
+// }
 
-impl Message for GetLeaderboard {
-    type Result = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
+pub struct UpdateLeaderboards;
+
+impl Message for UpdateLeaderboards {
+    type Result = StatisticsDatabaseResult<()>;
 }
 
 #[async_trait]
-impl Handler<GetLeaderboard> for StatisticDatabaseController {
-    async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> <GetLeaderboard as Message>::Result {
-        self.leaderboards.build_leaderboard(&message.0).await
+impl Handler<UpdateLeaderboards> for StatisticDatabaseController {
+    async fn handle(&mut self, _message: UpdateLeaderboards, _ctx: &mut Context<Self>) -> <UpdateLeaderboards as Message>::Result {
+        self.leaderboards.update_all_leaderboards().await
     }
 }
 
@@ -412,6 +426,10 @@ impl Handler<GetLeaderboard> for StatisticDatabaseController {
 pub enum StatisticsDatabaseError {
     #[error("a database error occurred: {0}")]
     ClickHouseError(#[from] clickhouse_rs::errors::Error),
+    #[error("a database error occurred: {0}")]
+    PostgresError(#[from] tokio_postgres::Error),
+    #[error("a database pool error occurred: {0}")]
+    PoolError(#[from] deadpool_postgres::PoolError),
     #[error("unknown error")]
     UnknownError,
 }
