@@ -10,6 +10,7 @@ use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
 use crate::{Controller, StatisticsConfig};
+use crate::statistics::leaderboards::LeaderboardEntry;
 use crate::statistics::leaderboards::database::LeaderboardsDatabase;
 use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame, StatisticCounts, StatisticsStats};
 
@@ -32,6 +33,9 @@ impl StatisticDatabaseController {
         };
 
         initialise_database(&handler.pool).await?;
+
+        // Force-rebuild leaderboards at startup to ensure they are up-to-date
+        handler.leaderboards.update_all_leaderboards().await?;
 
         Ok(handler)
     }
@@ -276,6 +280,10 @@ impl StatisticDatabaseController {
             handle.insert("global_statistics", block).await?;
         }
 
+        // For now we just directly update leaderboards now, but this could be replaced by
+        // a dirty flag and updating at fixed intervals in the future.
+        self.leaderboards.update_all_leaderboards().await?;
+
         Ok(game_id)
     }
 
@@ -396,18 +404,18 @@ impl Handler<GetStatisticsStats> for StatisticDatabaseController {
     }
 }
 
-// pub struct GetLeaderboard(pub String);
-//
-// impl Message for GetLeaderboard {
-//     type Result = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
-// }
-//
-// #[async_trait]
-// impl Handler<GetLeaderboard> for StatisticDatabaseController {
-//     async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> <GetLeaderboard as Message>::Result {
-//         self.leaderboards.build_leaderboard(&message.0).await
-//     }
-// }
+pub struct GetLeaderboard(pub String);
+
+impl Message for GetLeaderboard {
+    type Result = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
+}
+
+#[async_trait]
+impl Handler<GetLeaderboard> for StatisticDatabaseController {
+    async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> <GetLeaderboard as Message>::Result {
+        self.leaderboards.get_leaderboard(&message.0).await
+    }
+}
 
 pub struct UpdateLeaderboards;
 

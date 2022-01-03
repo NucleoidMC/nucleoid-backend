@@ -30,7 +30,7 @@ impl LeaderboardGenerator {
         }
     }
 
-    pub async fn build_leaderboard<'a>(&self, handle: &'a mut clickhouse_rs::ClientHandle, id: &str) -> StatisticsDatabaseResult<Option<impl Stream<Item = StatisticsDatabaseResult<LeaderboardEntry>> + 'a>> {
+    pub async fn build_leaderboard<'a>(&self, handle: &'a mut clickhouse_rs::ClientHandle, id: &str) -> StatisticsDatabaseResult<Option<impl Stream<Item = StatisticsDatabaseResult<LeaderboardValue>> + 'a>> {
         let sql = match self.definitions.get(id) {
             Some(sql) => sql.1.clone(),
             None => return Ok(None),
@@ -44,7 +44,7 @@ impl LeaderboardGenerator {
                 ValueType::UInt => row.get::<u64, _>(&*sql.value)? as f64,
                 ValueType::Float => row.get::<f64, _>(&*sql.value)?,
             };
-            Ok(LeaderboardEntry { player_id, value })
+            Ok(LeaderboardValue { player_id, value: value })
         });
 
         Ok(Some(stream))
@@ -56,9 +56,15 @@ impl LeaderboardGenerator {
 }
 
 #[derive(Serialize)]
-pub struct LeaderboardEntry {
+pub struct LeaderboardValue {
     player_id: Uuid,
     value: f64,
+}
+
+#[derive(Serialize)]
+pub struct LeaderboardEntry {
+    player: Uuid,
+    ranking: i64,
 }
 
 fn build_sql(definition: &LeaderboardDefinition) -> LeaderboardSql {

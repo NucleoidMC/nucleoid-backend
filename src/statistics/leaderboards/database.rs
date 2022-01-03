@@ -2,8 +2,10 @@ use clickhouse_rs::Pool;
 use futures::StreamExt;
 use nucleoid_leaderboards::model::LeaderboardDefinition;
 use tokio_postgres::Statement;
+use uuid::Uuid;
+
 use crate::statistics::database::StatisticsDatabaseResult;
-use crate::statistics::leaderboards::{LeaderboardEntry, LeaderboardGenerator};
+use crate::statistics::leaderboards::{LeaderboardEntry, LeaderboardGenerator, LeaderboardValue};
 
 pub const CREATE_LEADERBOARDS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS leaderboard_rankings(
@@ -23,7 +25,8 @@ pub async fn setup_leaderboard_tables(client: &deadpool_postgres::Object) -> Sta
 pub struct LeaderboardsDatabase {
     postgres_pool: deadpool_postgres::Pool,
     clickhouse_pool: clickhouse_rs::Pool,
-    upsert: Statement,
+    upsert_statement: Statement,
+    fetch_statement: Statement,
     generator: LeaderboardGenerator,
 }
 
@@ -40,10 +43,21 @@ impl LeaderboardsDatabase {
         "#;
         let upsert_statement = client.prepare(upsert_statement).await?;
 
+        let fetch_statement = r#"
+        SELECT player_id, ranking
+        FROM leaderboard_rankings
+        WHERE leaderboard_id = $1
+        ORDER BY ranking ASC
+        LIMIT $2
+        "#;
+
+        let fetch_statement = client.prepare(fetch_statement).await?;
+
         Ok(Self {
             postgres_pool,
             clickhouse_pool,
-            upsert: upsert_statement,
+            upsert_statement,
+            fetch_statement,
             generator: LeaderboardGenerator::new(leaderboards),
         })
     }
@@ -56,13 +70,24 @@ impl LeaderboardsDatabase {
             if let Some(mut entries) = entries {
                 let mut rank = 1_i64;
                 while let Some(entry) = entries.next().await {
-                    let entry: LeaderboardEntry = entry?;
-                    client.execute(&self.upsert, &[&entry.player_id, leaderboard, &rank]).await?;
+                    let entry: LeaderboardValue = entry?;
+                    client.execute(&self.upsert_statement, &[&entry.player_id, leaderboard, &rank]).await?;
                     rank += 1;
                 }
             }
         }
 
         Ok(())
+    }
+
+    pub async fn get_leaderboard(&self, id: &str) -> StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>> {
+        let client = self.postgres_pool.get().await?;
+        let res = client.query(&self.fetch_statement, &[&id, &10_i64]).await?;
+        let leaderboard = res.iter().map(|row| {
+            let uuid = row.get::<_, Uuid>("player_id");
+            let ranking = row.get::<_, i64>("ranking");
+            LeaderboardEntry { player: uuid, ranking }
+        }).collect::<Vec<_>>();
+        Ok(if leaderboard.is_empty() { None } else { Some(leaderboard) })
     }
 }
