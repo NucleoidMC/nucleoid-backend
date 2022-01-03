@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS leaderboard_rankings(
     player_id uuid NOT NULL,
     leaderboard_id text NOT NULL,
     ranking bigint NOT NULL,
-    UNIQUE (player_id, leaderboard_id)
+    PRIMARY KEY (player_id, leaderboard_id)
 );
 "#;
 
