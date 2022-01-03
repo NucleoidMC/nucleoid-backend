@@ -65,6 +65,7 @@ pub struct LeaderboardValue {
 pub struct LeaderboardEntry {
     player: Uuid,
     ranking: i64,
+    value: f64,
 }
 
 fn build_sql(definition: &LeaderboardDefinition) -> LeaderboardSql {

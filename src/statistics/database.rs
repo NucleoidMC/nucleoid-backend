@@ -417,16 +417,16 @@ impl Handler<GetLeaderboard> for StatisticDatabaseController {
     }
 }
 
-pub struct UpdateLeaderboards;
+pub struct GetPlayerRankings(pub Uuid);
 
-impl Message for UpdateLeaderboards {
-    type Result = StatisticsDatabaseResult<()>;
+impl Message for GetPlayerRankings {
+    type Result = StatisticsDatabaseResult<Option<HashMap<String, (i64, f64)>>>;
 }
 
 #[async_trait]
-impl Handler<UpdateLeaderboards> for StatisticDatabaseController {
-    async fn handle(&mut self, _message: UpdateLeaderboards, _ctx: &mut Context<Self>) -> <UpdateLeaderboards as Message>::Result {
-        self.leaderboards.update_all_leaderboards().await
+impl Handler<GetPlayerRankings> for StatisticDatabaseController {
+    async fn handle(&mut self, message: GetPlayerRankings, _ctx: &mut Context<Self>) -> <GetPlayerRankings as Message>::Result {
+        self.leaderboards.get_player_rankings(&message.0).await
     }
 }
 

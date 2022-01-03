@@ -5,7 +5,7 @@ use warp::http::StatusCode;
 use xtra::prelude::*;
 
 use crate::controller::*;
-use crate::statistics::database::{GetGameStats, GetLeaderboard, GetPlayerStats, GetRecentGames, GetStatisticsStats, StatisticDatabaseController, StatisticsDatabaseError, StatisticsDatabaseResult, UpdateLeaderboards};
+use crate::statistics::database::*;
 use crate::WebServerConfig;
 
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
@@ -60,12 +60,13 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             move |id| get_leaderboard(controller.clone(), id)
         }).with(&cors);
 
-    let update_leaderboards = warp::path("leaderboards")
-        .and(warp::path("update"))
+    let get_player_rankings = warp::path("player")
+        .and(warp::path::param::<Uuid>())
+        .and(warp::path("rankings"))
         .and_then({
             let controller = controller.clone();
-            move || update_leaderboards(controller.clone())
-        });
+            move |id| get_player_rankings(controller.clone(), id)
+        }).with(&cors);
 
     let get_statistics_stats = warp::path("stats")
         .and(warp::path("stats"))
@@ -80,8 +81,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .or(all_game_stats)
         .or(get_recent_games)
         .or(get_statistics_stats)
-        .or(update_leaderboards)
-        .or(get_leaderboard);
+        .or(get_leaderboard)
+        .or(get_player_rankings);
 
     warp::serve(combined)
         .run(([127, 0, 0, 1], config.port))
@@ -152,10 +153,10 @@ async fn get_leaderboard(controller: Address<Controller>, id: String) -> ApiResu
     handle_statistics_option_result(res)
 }
 
-async fn update_leaderboards(controller: Address<Controller>) -> ApiResult {
+async fn get_player_rankings(controller: Address<Controller>, player: Uuid) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
-    let res = statistics.send(UpdateLeaderboards).await.expect("controller disconnected");
-    handle_statistics_result(res.map(|_| "ok"))
+    let res = statistics.send(GetPlayerRankings(player)).await.expect("controller disconnected");
+    handle_statistics_option_result(res)
 }
 
 #[derive(Deserialize)]
