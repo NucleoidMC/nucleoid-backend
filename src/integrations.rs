@@ -22,7 +22,7 @@ const MAX_FRAME_LENGTH: usize = 4 * 1024 * 1024;
 const FRAME_HEADER_SIZE: usize = 4;
 
 pub async fn run(controller: Address<Controller>, config: IntegrationsConfig) {
-    let mut listener = TcpListener::bind(&format!("0.0.0.0:{}", config.port)).await
+    let listener = TcpListener::bind(&format!("0.0.0.0:{}", config.port)).await
         .expect("failed to open integrations listener");
 
     loop {

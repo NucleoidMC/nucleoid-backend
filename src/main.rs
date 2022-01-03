@@ -1,4 +1,6 @@
 use std::future::Future;
+use deadpool_postgres::{Pool, Runtime};
+use tokio_postgres::NoTls;
 
 use xtra::prelude::*;
 use xtra::spawn::Spawner;
@@ -40,10 +42,6 @@ async fn main() {
         futures.push(tokio::spawn(integrations::run(controller.clone(), integrations)));
     }
 
-    if let Some(statistics) = config.statistics {
-        futures.push(tokio::spawn(statistics::run(controller.clone(), statistics)));
-    };
-
     if let Some(web) = config.web_server {
         futures.push(tokio::spawn(web::run(controller.clone(), web)));
     }
@@ -53,8 +51,26 @@ async fn main() {
     }
 
     if let Some(database) = config.database {
-        futures.push(tokio::spawn(database::run(controller.clone(), database)));
+        let postgres_pool = setup_postgres(database.clone()).await;
+
+        futures.push(tokio::spawn(database::run(controller.clone(), postgres_pool.clone(), database)));
+
+        if let Some(statistics) = config.statistics {
+            futures.push(tokio::spawn(statistics::run(controller.clone(), statistics, postgres_pool.clone())));
+        }
     }
 
     let _ = futures::future::join_all(futures).await;
+}
+
+async fn setup_postgres(config: DatabaseConfig) -> Pool {
+    let mut db_config = deadpool_postgres::Config::new();
+    db_config.host = Some(config.host.clone());
+    db_config.port = Some(config.port);
+    db_config.user = Some(config.user.clone());
+    db_config.password = Some(config.password.clone());
+    db_config.dbname = Some(config.database.clone());
+    let pool = db_config.create_pool(Some(Runtime::Tokio1), NoTls)
+        .expect("failed to create database pool");
+    pool
 }

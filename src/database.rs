@@ -2,49 +2,41 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
+use deadpool_postgres::Pool;
 use log::error;
-use tokio_postgres::{Client, Statement};
+use tokio_postgres::Statement;
 use xtra::prelude::*;
 
 use crate::{DatabaseConfig, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
 
-pub async fn run(controller: Address<Controller>, config: DatabaseConfig) {
-    let (client, connection) = tokio_postgres::connect(
-        &format!("host={} port={} user={} password={} dbname={}", config.host, config.port, config.user, config.password, config.database),
-        tokio_postgres::NoTls,
-    ).await.expect("failed to open connection to database");
-
-    let database = DatabaseClient { client, config, channels: HashMap::new() };
+pub async fn run(controller: Address<Controller>, pool: Pool, config: DatabaseConfig) {
+    let database = DatabaseClient { pool, _config: config, channels: HashMap::new() };
     let database = database.create(None).spawn(&mut TokioGlobal);
 
     controller.do_send_async(RegisterDatabaseClient { client: database }).await
         .expect("controller disconnected");
-
-    if let Err(err) = connection.await {
-        error!("database connection error: {}", err);
-    }
 }
 
 pub struct DatabaseClient {
-    client: Client,
-    config: DatabaseConfig,
+    pool: Pool,
+    _config: DatabaseConfig,
     channels: HashMap<String, ChannelDatabase>,
 }
 
 impl DatabaseClient {
-    async fn get_or_open_channel<'a>(
-        channels: &'a mut HashMap<String, ChannelDatabase>,
-        client: &mut Client,
+    async fn get_or_open_channel(
+        channels: &mut HashMap<String, ChannelDatabase>,
+        pool: Pool,
         channel: String
-    ) -> Result<&'a mut ChannelDatabase> {
+    ) -> Result<&mut ChannelDatabase> {
         use std::collections::hash_map::Entry::*;
         match channels.entry(channel) {
             Occupied(occupied) => Ok(occupied.into_mut()),
             Vacant(vacant) => {
                 let key = vacant.key().clone();
-                let database = ChannelDatabase::open(client, key).await?;
+                let database = ChannelDatabase::open(pool, key).await?;
                 Ok(vacant.insert(database))
             }
         }
@@ -73,13 +65,19 @@ impl Message for WritePerformance {
     type Result = ();
 }
 
+pub struct GetPostgresPool;
+
+impl Message for GetPostgresPool {
+    type Result = Pool;
+}
+
 #[async_trait]
 impl Handler<WriteStatus> for DatabaseClient {
     async fn handle(&mut self, message: WriteStatus, _ctx: &mut Context<Self>) {
-        let channel = DatabaseClient::get_or_open_channel(&mut self.channels, &mut self.client, message.channel).await
+        let channel = DatabaseClient::get_or_open_channel(&mut self.channels, self.pool.clone(), message.channel).await
             .expect("failed to open database for channel");
 
-        if let Err(err) = channel.write_status(&mut self.client, message.time, message.status).await {
+        if let Err(err) = channel.write_status(self.pool.clone(), message.time, message.status).await {
             error!("failed to write status to database: {:?}", err);
         }
     }
@@ -88,12 +86,19 @@ impl Handler<WriteStatus> for DatabaseClient {
 #[async_trait]
 impl Handler<WritePerformance> for DatabaseClient {
     async fn handle(&mut self, message: WritePerformance, _ctx: &mut Context<Self>) {
-        let channel = DatabaseClient::get_or_open_channel(&mut self.channels, &mut self.client, message.channel).await
+        let channel = DatabaseClient::get_or_open_channel(&mut self.channels, self.pool.clone(), message.channel).await
             .expect("failed to open database for channel");
 
-        if let Err(err) = channel.write_performance(&mut self.client, message.time, message.performance).await {
+        if let Err(err) = channel.write_performance(self.pool.clone(), message.time, message.performance).await {
             error!("failed to write status to database: {:?}", err);
         }
+    }
+}
+
+#[async_trait]
+impl Handler<GetPostgresPool> for DatabaseClient {
+    async fn handle(&mut self, _message: GetPostgresPool, _ctx: &mut Context<Self>) -> <GetPostgresPool as Message>::Result {
+        self.pool.clone()
     }
 }
 
@@ -103,7 +108,7 @@ struct ChannelDatabase {
 }
 
 impl ChannelDatabase {
-    async fn open(client: &mut Client, channel: String) -> Result<ChannelDatabase> {
+    async fn open(pool: Pool, channel: String) -> Result<ChannelDatabase> {
         let status_table = format!("{}_server_status", channel);
         let performance_table = format!("{}_server_performance", channel);
 
@@ -132,6 +137,8 @@ impl ChannelDatabase {
             )
         "#, performance_table);
 
+        let client = pool.get().await?;
+
         let create_status_table = client.prepare(&create_status_table).await?;
         client.execute(&create_status_table, &[]).await?;
 
@@ -154,14 +161,16 @@ impl ChannelDatabase {
         })
     }
 
-    async fn write_status(&self, client: &mut Client, time: SystemTime, status: ServerStatus) -> Result<()> {
+    async fn write_status(&self, pool: Pool, time: SystemTime, status: ServerStatus) -> Result<()> {
+        let client = pool.get().await?;
         let player_count = status.players.len() as i16;
         let game_count = status.games.len() as i16;
         client.execute(&self.add_status, &[&time, &player_count, &game_count]).await?;
         Ok(())
     }
 
-    async fn write_performance(&self, client: &mut Client, time: SystemTime, performance: ServerPerformance) -> Result<()> {
+    async fn write_performance(&self, pool: Pool, time: SystemTime, performance: ServerPerformance) -> Result<()> {
+        let client = pool.get().await?;
         let average_tick_ms = performance.average_tick_ms as f32;
         let tps = performance.tps as i16;
         let dimensions = performance.dimensions as i16;
@@ -181,4 +190,6 @@ type Result<T> = std::result::Result<T, Error>;
 enum Error {
     #[error("postgres error")]
     Postgres(#[from] tokio_postgres::Error),
+    #[error("pool error")]
+    PostgresPool(#[from] deadpool_postgres::PoolError),
 }

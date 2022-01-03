@@ -5,7 +5,7 @@ use warp::http::StatusCode;
 use xtra::prelude::*;
 
 use crate::controller::*;
-use crate::statistics::database::{GetGameStats, GetPlayerStats, GetRecentGames, GetStatisticsStats, StatisticDatabaseController, StatisticsDatabaseError, StatisticsDatabaseResult};
+use crate::statistics::database::*;
 use crate::WebServerConfig;
 
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
@@ -53,6 +53,21 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             move |query: RecentGamesQuery| get_recent_games(controller.clone(), config.clone(), query)
         }).with(&cors);
 
+    let get_leaderboard = warp::path("leaderboard")
+        .and(warp::path::param::<String>())
+        .and_then({
+            let controller = controller.clone();
+            move |id| get_leaderboard(controller.clone(), id)
+        }).with(&cors);
+
+    let get_player_rankings = warp::path("player")
+        .and(warp::path::param::<Uuid>())
+        .and(warp::path("rankings"))
+        .and_then({
+            let controller = controller.clone();
+            move |id| get_player_rankings(controller.clone(), id)
+        }).with(&cors);
+
     let get_statistics_stats = warp::path("stats")
         .and(warp::path("stats"))
         .and_then({
@@ -65,7 +80,9 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .or(all_player_game_stats)
         .or(all_game_stats)
         .or(get_recent_games)
-        .or(get_statistics_stats);
+        .or(get_statistics_stats)
+        .or(get_leaderboard)
+        .or(get_player_rankings);
 
     warp::serve(combined)
         .run(([127, 0, 0, 1], config.port))
@@ -128,6 +145,18 @@ async fn get_statistics_stats(controller: Address<Controller>) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
     let res = statistics.send(GetStatisticsStats).await.expect("controller disconnected");
     handle_statistics_result(res)
+}
+
+async fn get_leaderboard(controller: Address<Controller>, id: String) -> ApiResult {
+    let statistics = get_statistics_controller(controller).await?;
+    let res = statistics.send(GetLeaderboard(id)).await.expect("controller disconnected");
+    handle_statistics_option_result(res)
+}
+
+async fn get_player_rankings(controller: Address<Controller>, player: Uuid) -> ApiResult {
+    let statistics = get_statistics_controller(controller).await?;
+    let res = statistics.send(GetPlayerRankings(player)).await.expect("controller disconnected");
+    handle_statistics_option_result(res)
 }
 
 #[derive(Deserialize)]

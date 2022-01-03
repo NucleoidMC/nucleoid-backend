@@ -5,27 +5,37 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{Block, Pool, row};
 use log::warn;
+use nucleoid_leaderboards::model::LeaderboardDefinition;
 use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
 use crate::{Controller, StatisticsConfig};
+use crate::statistics::leaderboards::LeaderboardEntry;
+use crate::statistics::leaderboards::database::LeaderboardsDatabase;
 use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame, StatisticCounts, StatisticsStats};
 
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
     pool: Pool,
     _config: StatisticsConfig,
+    leaderboards: LeaderboardsDatabase,
 }
 
 impl StatisticDatabaseController {
-    pub async fn connect(controller: &Address<Controller>, config: &StatisticsConfig) -> StatisticsDatabaseResult<Self> {
+    pub async fn connect(controller: &Address<Controller>, postgres_pool: deadpool_postgres::Pool, config: &StatisticsConfig, leaderboards: Vec<LeaderboardDefinition>) -> StatisticsDatabaseResult<Self> {
+        let pool = Pool::new(config.database_url.clone());
+
         let handler = Self {
             _controller: controller.clone(),
-            pool: Pool::new(config.database_url.clone()),
+            pool: pool.clone(),
             _config: config.clone(),
+            leaderboards: LeaderboardsDatabase::new(postgres_pool.clone(), pool, leaderboards).await?,
         };
 
         initialise_database(&handler.pool).await?;
+
+        // Force-rebuild leaderboards at startup to ensure they are up-to-date
+        handler.leaderboards.update_all_leaderboards().await?;
 
         Ok(handler)
     }
@@ -270,6 +280,10 @@ impl StatisticDatabaseController {
             handle.insert("global_statistics", block).await?;
         }
 
+        // For now we just directly update leaderboards now, but this could be replaced by
+        // a dirty flag and updating at fixed intervals in the future.
+        self.leaderboards.update_all_leaderboards().await?;
+
         Ok(game_id)
     }
 
@@ -390,10 +404,40 @@ impl Handler<GetStatisticsStats> for StatisticDatabaseController {
     }
 }
 
+pub struct GetLeaderboard(pub String);
+
+impl Message for GetLeaderboard {
+    type Result = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
+}
+
+#[async_trait]
+impl Handler<GetLeaderboard> for StatisticDatabaseController {
+    async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> <GetLeaderboard as Message>::Result {
+        self.leaderboards.get_leaderboard(&message.0).await
+    }
+}
+
+pub struct GetPlayerRankings(pub Uuid);
+
+impl Message for GetPlayerRankings {
+    type Result = StatisticsDatabaseResult<Option<HashMap<String, (i64, f64)>>>;
+}
+
+#[async_trait]
+impl Handler<GetPlayerRankings> for StatisticDatabaseController {
+    async fn handle(&mut self, message: GetPlayerRankings, _ctx: &mut Context<Self>) -> <GetPlayerRankings as Message>::Result {
+        self.leaderboards.get_player_rankings(&message.0).await
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum StatisticsDatabaseError {
     #[error("a database error occurred: {0}")]
     ClickHouseError(#[from] clickhouse_rs::errors::Error),
+    #[error("a database error occurred: {0}")]
+    PostgresError(#[from] tokio_postgres::Error),
+    #[error("a database pool error occurred: {0}")]
+    PoolError(#[from] deadpool_postgres::PoolError),
     #[error("unknown error")]
     UnknownError,
 }
