@@ -18,6 +18,7 @@ mod persistent;
 mod config;
 mod database;
 mod statistics;
+mod mojang_api;
 
 pub struct TokioGlobal;
 

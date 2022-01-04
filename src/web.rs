@@ -1,3 +1,4 @@
+use std::error::Error;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warp::Filter;
@@ -5,12 +6,16 @@ use warp::http::StatusCode;
 use xtra::prelude::*;
 
 use crate::controller::*;
+use crate::mojang_api::{GetPlayerUsername, MojangApiClient};
 use crate::statistics::database::*;
 use crate::WebServerConfig;
 
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
     let cors = warp::cors()
         .allow_any_origin();
+
+    let mojang_client = MojangApiClient::start(512)
+        .expect("failed to create Mojang API client");
 
     let status = warp::path("status")
         .and(warp::path::param())
@@ -75,6 +80,14 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             move || get_statistics_stats(controller.clone())
         }).with(&cors);
 
+    let get_player_username = warp::path("player")
+        .and(warp::path::param::<Uuid>())
+        .and(warp::path("username"))
+        .and_then({
+            let mojang_client = mojang_client.clone();
+            move |id| get_player_username(mojang_client.clone(), id)
+        }).with(&cors);
+
     let combined = status
         .or(player_game_stats)
         .or(all_player_game_stats)
@@ -82,7 +95,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .or(get_recent_games)
         .or(get_statistics_stats)
         .or(get_leaderboard)
-        .or(get_player_rankings);
+        .or(get_player_rankings)
+        .or(get_player_username);
 
     warp::serve(combined)
         .run(([127, 0, 0, 1], config.port))
@@ -118,13 +132,13 @@ async fn get_player_stats(controller: Address<Controller>, uuid: Uuid, namespace
         uuid,
         namespace,
     }).await.unwrap();
-    handle_statistics_option_result(res)
+    handle_option_result(res)
 }
 
 async fn get_game_stats(controller: Address<Controller>, uuid: Uuid) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
     let res = statistics.send(GetGameStats(uuid)).await.unwrap();
-    handle_statistics_option_result(res)
+    handle_option_result(res)
 }
 
 async fn get_recent_games(controller: Address<Controller>, config: WebServerConfig, query: RecentGamesQuery) -> ApiResult {
@@ -138,25 +152,30 @@ async fn get_recent_games(controller: Address<Controller>, config: WebServerConf
         limit: query.limit,
         player_id: query.player,
     }).await.unwrap();
-    handle_statistics_result(res)
+    handle_result(res)
 }
 
 async fn get_statistics_stats(controller: Address<Controller>) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
     let res = statistics.send(GetStatisticsStats).await.expect("controller disconnected");
-    handle_statistics_result(res)
+    handle_result(res)
 }
 
 async fn get_leaderboard(controller: Address<Controller>, id: String) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
     let res = statistics.send(GetLeaderboard(id)).await.expect("controller disconnected");
-    handle_statistics_option_result(res)
+    handle_option_result(res)
 }
 
 async fn get_player_rankings(controller: Address<Controller>, player: Uuid) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
     let res = statistics.send(GetPlayerRankings(player)).await.expect("controller disconnected");
-    handle_statistics_option_result(res)
+    handle_option_result(res)
+}
+
+async fn get_player_username(mojang_client: Address<MojangApiClient>, id: Uuid) -> ApiResult {
+    let profile = mojang_client.send(GetPlayerUsername(id)).await.expect("Mojang client disconnected");
+    handle_option_result(profile)
 }
 
 #[derive(Deserialize)]
@@ -173,16 +192,16 @@ async fn get_statistics_controller(controller: Address<Controller>) -> Result<Ad
     }
 }
 
-fn handle_statistics_result<T>(result: StatisticsDatabaseResult<T>) -> ApiResult
-    where T: Serialize {
+fn handle_result<T, E>(result: Result<T, E>) -> ApiResult
+    where T: Serialize, E: Error {
     match result {
         Ok(t) => Ok(Box::new(warp::reply::json(&t))),
         Err(e) => Ok(handle_server_error(&e)),
     }
 }
 
-fn handle_statistics_option_result<T>(result: StatisticsDatabaseResult<Option<T>>) -> ApiResult
-    where T: Serialize {
+fn handle_option_result<T, E>(result: Result<Option<T>, E>) -> ApiResult
+    where T: Serialize, E: Error {
     match result {
         Ok(Some(t)) => Ok(Box::new(warp::reply::json(&t))),
         Ok(None) => Err(warp::reject::not_found()),
@@ -190,7 +209,8 @@ fn handle_statistics_option_result<T>(result: StatisticsDatabaseResult<Option<T>
     }
 }
 
-fn handle_server_error(e: &StatisticsDatabaseError) -> Box<dyn warp::Reply> {
+fn handle_server_error<E>(e: &E) -> Box<dyn warp::Reply>
+    where E: Error {
     log::warn!("error handling request: {}", e);
     send_http_status(StatusCode::INTERNAL_SERVER_ERROR)
 }
