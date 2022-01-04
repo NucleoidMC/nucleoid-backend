@@ -78,12 +78,12 @@ impl LeaderboardsDatabase {
         let client = self.postgres_pool.get().await?;
         let mut handle = self.clickhouse_pool.get_handle().await?;
         for leaderboard in self.generator.list_all_leaderboards() {
-            let entries = self.generator.build_leaderboard(&mut handle, leaderboard).await?;
+            let entries = self.generator.build_leaderboard(&mut handle, &leaderboard).await?;
             if let Some(mut entries) = entries {
                 let mut rank = 1_i64;
                 while let Some(entry) = entries.next().await {
                     let entry: LeaderboardValue = entry?;
-                    client.execute(&self.upsert_statement, &[&entry.player_id, leaderboard, &rank, &entry.value]).await?;
+                    client.execute(&self.upsert_statement, &[&entry.player_id, &leaderboard, &rank, &entry.value]).await?;
                     rank += 1;
                 }
             }
@@ -116,5 +116,9 @@ impl LeaderboardsDatabase {
         }
 
         Ok(if rankings.is_empty() { None } else { Some(rankings) })
+    }
+
+    pub fn list_all_leaderboards(&self) -> Vec<String> {
+        self.generator.list_all_leaderboards()
     }
 }

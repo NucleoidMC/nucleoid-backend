@@ -65,6 +65,12 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             move |id| get_leaderboard(controller.clone(), id)
         }).with(&cors);
 
+    let list_leaderboards = warp::path("leaderboards")
+        .and_then({
+            let controller = controller.clone();
+            move || list_leaderboards(controller.clone())
+        }).with(&cors);
+
     let get_player_rankings = warp::path("player")
         .and(warp::path::param::<Uuid>())
         .and(warp::path("rankings"))
@@ -95,6 +101,7 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .or(get_recent_games)
         .or(get_statistics_stats)
         .or(get_leaderboard)
+        .or(list_leaderboards)
         .or(get_player_rankings)
         .or(get_player_username);
 
@@ -165,6 +172,12 @@ async fn get_leaderboard(controller: Address<Controller>, id: String) -> ApiResu
     let statistics = get_statistics_controller(controller).await?;
     let res = statistics.send(GetLeaderboard(id)).await.expect("controller disconnected");
     handle_option_result(res)
+}
+
+async fn list_leaderboards(controller: Address<Controller>) -> ApiResult {
+    let statistics = get_statistics_controller(controller).await?;
+    let res = statistics.send(GetAllLeaderboards).await.expect("controller disconnected");
+    Ok(Box::new(warp::reply::json(&res)))
 }
 
 async fn get_player_rankings(controller: Address<Controller>, player: Uuid) -> ApiResult {

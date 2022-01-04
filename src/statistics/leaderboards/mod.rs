@@ -50,8 +50,8 @@ impl LeaderboardGenerator {
         Ok(Some(stream))
     }
 
-    pub fn list_all_leaderboards(&self) -> Vec<&String> {
-        self.definitions.keys().collect::<Vec<_>>()
+    pub fn list_all_leaderboards(&self) -> Vec<String> {
+        self.definitions.keys().map(Clone::clone).collect::<Vec<_>>()
     }
 }
 

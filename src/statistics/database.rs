@@ -417,6 +417,19 @@ impl Handler<GetLeaderboard> for StatisticDatabaseController {
     }
 }
 
+pub struct GetAllLeaderboards;
+
+impl Message for GetAllLeaderboards {
+    type Result = Vec<String>;
+}
+
+#[async_trait]
+impl Handler<GetAllLeaderboards> for StatisticDatabaseController {
+    async fn handle(&mut self, _message: GetAllLeaderboards, _ctx: &mut Context<Self>) -> <GetAllLeaderboards as Message>::Result {
+        self.leaderboards.list_all_leaderboards()
+    }
+}
+
 pub struct GetPlayerRankings(pub Uuid);
 
 impl Message for GetPlayerRankings {
