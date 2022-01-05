@@ -4,7 +4,6 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use deadpool_postgres::Pool;
 use log::error;
-use tokio_postgres::Statement;
 use xtra::prelude::*;
 
 use crate::{DatabaseConfig, TokioGlobal};
@@ -103,8 +102,8 @@ impl Handler<GetPostgresPool> for DatabaseClient {
 }
 
 struct ChannelDatabase {
-    add_status: Statement,
-    add_performance: Statement,
+    add_status: String,
+    add_performance: String,
 }
 
 impl ChannelDatabase {
@@ -148,12 +147,10 @@ impl ChannelDatabase {
         let add_status = format!(r#"
             INSERT INTO {} (time, player_count, game_count) VALUES ($1, $2, $3)
         "#, status_table);
-        let add_status = client.prepare(&add_status).await?;
 
         let add_performance = format!(r#"
             INSERT INTO {} (time, average_tick_ms, tps, dimensions, entities, chunks, used_memory, total_memory) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#, performance_table);
-        let add_performance = client.prepare(&add_performance).await?;
 
         Ok(ChannelDatabase {
             add_status,
@@ -165,7 +162,8 @@ impl ChannelDatabase {
         let client = pool.get().await?;
         let player_count = status.players.len() as i16;
         let game_count = status.games.len() as i16;
-        client.execute(&self.add_status, &[&time, &player_count, &game_count]).await?;
+        let statement = client.prepare_cached(&self.add_status).await?;
+        client.execute(&statement, &[&time, &player_count, &game_count]).await?;
         Ok(())
     }
 
@@ -179,7 +177,8 @@ impl ChannelDatabase {
         let used_memory = performance.used_memory as i64;
         let total_memory = performance.total_memory as i64;
 
-        client.execute(&self.add_performance, &[&time, &average_tick_ms, &tps, &dimensions, &entities, &chunks, &used_memory, &total_memory]).await?;
+        let statement = client.prepare_cached(&self.add_performance).await?;
+        client.execute(&statement, &[&time, &average_tick_ms, &tps, &dimensions, &entities, &chunks, &used_memory, &total_memory]).await?;
         Ok(())
     }
 }
