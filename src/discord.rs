@@ -7,7 +7,7 @@ use serde_json::json;
 use serenity::CacheAndHttp;
 use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
-use serenity::model::channel::{Embed, Message as SerenityMessage, ReactionType};
+use serenity::model::channel::{Embed, Message as SerenityMessage, Reaction};
 use serenity::prelude::*;
 use xtra::Context as XtraContext;
 use xtra::KeepRunning;
@@ -20,6 +20,7 @@ use crate::model::*;
 
 mod relay;
 mod pings;
+mod lfp;
 
 pub struct DiscordClient {
     controller: Address<Controller>,
@@ -39,6 +40,7 @@ impl Actor for DiscordClient {
 pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
     let relay_store = Persistent::open("relay.json").await;
     let ping_store = Persistent::open("pings.json").await;
+    let lfp_store = Persistent::open("lfp.json").await;
 
     let actor = DiscordClient {
         controller: controller.clone(),
@@ -56,11 +58,15 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
             controller: controller.clone(),
             discord: address.clone(),
         },
+        lfp: lfp::Handler {
+            discord: address.clone(),
+            config: config.clone(),
+        },
     };
 
     let mut client = Client::builder(config.token)
         .event_handler(handler)
-        .intents(GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS)
+        .intents(GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGE_REACTIONS)
         .await
         .expect("failed to create client");
 
@@ -68,6 +74,7 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         let mut data = client.data.write().await;
         data.insert::<relay::StoreKey>(relay_store);
         data.insert::<pings::StoreKey>(ping_store);
+        data.insert::<lfp::StoreKey>(lfp_store);
     }
 
     address.do_send_async(Init {
@@ -210,6 +217,7 @@ impl Handler<ReportError> for DiscordClient {
 struct DiscordHandler {
     pings: pings::Handler,
     relay: relay::Handler,
+    lfp: lfp::Handler,
 }
 
 impl DiscordHandler {
@@ -224,11 +232,12 @@ impl DiscordHandler {
             ["ping", "allow", ping, role] if admin => self.pings.allow_for_role(ctx, message, ping, role).await,
             ["ping", "disallow", ping, role] if admin => self.pings.disallow_for_role(ctx, message, ping, role).await,
             ["ping", "request", ping, ..] => self.pings.request(ctx, message, ping).await,
+            ["lfp", "setup", ..] => self.lfp.setup_for_channel(ctx, message).await,
             _ => Err(CommandError::InvalidCommand),
         };
 
-        let reaction = if result.is_ok() { "✅" } else { "❌" };
-        let _ = message.react(&ctx, ReactionType::Unicode(reaction.to_owned())).await;
+        let reaction = if result.is_ok() { '✅' } else { '❌' };
+        let _ = message.react(&ctx, reaction).await;
 
         if let Err(err) = result {
             let _ = message.reply(&ctx, err).await;
@@ -239,16 +248,26 @@ impl DiscordHandler {
 #[async_trait]
 impl EventHandler for DiscordHandler {
     async fn message(&self, ctx: SerenityContext, message: SerenityMessage) {
-        if let Ok(true) = message.mentions_me(&ctx).await {
-            let tokens: Vec<&str> = message.content.split_ascii_whitespace().collect();
-            self.handle_command(&tokens[1..], &ctx, &message).await;
-        } else if !message.author.bot {
-            if message.content.starts_with("//") && check_message_admin(&ctx, &message).await {
-                self.relay.send_outgoing_command(&ctx, &message).await;
+        if !message.author.bot {
+            if let Ok(true) = message.mentions_me(&ctx).await {
+                let tokens: Vec<&str> = message.content.split_ascii_whitespace().collect();
+                self.handle_command(&tokens[1..], &ctx, &message).await;
             } else {
-                self.relay.send_outgoing_chat(&ctx, &message).await;
+                if message.content.starts_with("//") && check_message_admin(&ctx, &message).await {
+                    self.relay.send_outgoing_command(&ctx, &message).await;
+                } else {
+                    self.relay.send_outgoing_chat(&ctx, &message).await;
+                }
             }
         }
+    }
+
+    async fn reaction_add(&self, ctx: SerenityContext, reaction: Reaction) {
+        self.lfp.handle_reaction_add(&ctx, reaction).await;
+    }
+
+    async fn reaction_remove(&self, ctx: SerenityContext, reaction: Reaction) {
+        self.lfp.handle_reaction_remove(&ctx, reaction).await;
     }
 
     async fn ready(&self, _ctx: SerenityContext, _ready: serenity::model::gateway::Ready) {
@@ -289,4 +308,6 @@ pub enum CommandError {
     MissingChangelog,
     #[error("You are not allowed to do this!")]
     NotAllowed,
+    #[error("You must mention a role with this command!")]
+    MustMentionRole,
 }

@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Config {
@@ -18,7 +18,10 @@ pub struct Config {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DiscordConfig {
     pub token: String,
+    #[serde(default = "default_ping_interval_minutes")]
     pub ping_interval_minutes: u16,
+    #[serde(default = "default_lfp_ping_interval_minutes")]
+    pub lfp_ping_interval_minutes: u16,
     #[serde(default)]
     pub relay_channel_topic: bool,
     #[serde(default)]
@@ -26,6 +29,10 @@ pub struct DiscordConfig {
     #[serde(default)]
     pub error_webhook: Option<ErrorWebhookConfig>,
 }
+
+fn default_ping_interval_minutes() -> u16 { 30 }
+
+fn default_lfp_ping_interval_minutes() -> u16 { 10 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ErrorWebhookConfig {
