@@ -8,6 +8,7 @@ use xtra::prelude::*;
 use crate::controller::*;
 use crate::mojang_api::{GetPlayerUsername, MojangApiClient};
 use crate::statistics::database::*;
+use crate::statistics::model::DataQueryType;
 use crate::WebServerConfig;
 
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
@@ -86,6 +87,16 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             move || get_statistics_stats(controller.clone())
         }).with(&cors);
 
+    let data_query = warp::path("stats")
+        .and(warp::path("data"))
+        .and(warp::path("query"))
+        .and(warp::query())
+        .and(warp::get())
+        .and_then({
+            let controller = controller.clone();
+            move |query: DataQueryQuery| data_query(controller.clone(), query)
+        }).with(&cors);
+
     let get_player_username = warp::path("player")
         .and(warp::path::param::<Uuid>())
         .and(warp::path("username"))
@@ -103,6 +114,7 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .or(get_leaderboard)
         .or(list_leaderboards)
         .or(get_player_rankings)
+        .or(data_query)
         .or(get_player_username);
 
     warp::serve(combined)
@@ -186,6 +198,14 @@ async fn get_player_rankings(controller: Address<Controller>, player: Uuid) -> A
     handle_option_result(res)
 }
 
+async fn data_query(controller: Address<Controller>, query: DataQueryQuery) -> ApiResult {
+    let statistics = get_statistics_controller(controller).await?;
+    let res = statistics.send(DataQuery(query.query)).await.expect("controller disconnected");
+    handle_result(res.map(|r| serde_json::json!({
+        "data": r
+    })))
+}
+
 async fn get_player_username(mojang_client: Address<MojangApiClient>, id: Uuid) -> ApiResult {
     let profile = mojang_client.send(GetPlayerUsername(id)).await.expect("Mojang client disconnected");
     handle_option_result(profile)
@@ -195,6 +215,11 @@ async fn get_player_username(mojang_client: Address<MojangApiClient>, id: Uuid) 
 struct RecentGamesQuery {
     limit: u32,
     player: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+struct DataQueryQuery {
+    query: DataQueryType,
 }
 
 async fn get_statistics_controller(controller: Address<Controller>) -> Result<Address<StatisticDatabaseController>, warp::Rejection> {

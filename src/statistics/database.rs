@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{Date, DateTime, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{Block, Pool, row};
 use log::warn;
@@ -12,7 +12,7 @@ use xtra::{Actor, Address, Context, Handler, Message};
 use crate::{Controller, StatisticsConfig};
 use crate::statistics::leaderboards::LeaderboardEntry;
 use crate::statistics::leaderboards::database::LeaderboardsDatabase;
-use crate::statistics::model::{GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame, StatisticCounts, StatisticsStats};
+use crate::statistics::model::{Datapoint, DataQueryType, GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame, StatisticCounts, StatisticsStats};
 
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
@@ -320,6 +320,40 @@ impl StatisticDatabaseController {
             },
         })
     }
+
+    async fn data_query(&self, query_type: DataQueryType) -> StatisticsDatabaseResult<Vec<Datapoint>> {
+        let mut handle = self.pool.get_handle().await?;
+        let query = match query_type {
+            DataQueryType::GamesByDay => r#"
+            SELECT
+                DATE(date_played) AS date,
+                COUNT(*) AS value
+            FROM games
+            GROUP BY date
+            "#,
+            DataQueryType::GamesByMonth => r#"
+            SELECT
+                toStartOfMonth(DATE(date_played)) AS date,
+                COUNT(*) AS value
+            FROM games
+            GROUP BY date
+            "#,
+        };
+
+        let result = handle.query(query).fetch_all().await?;
+        let rows = result.rows();
+        let mut data = Vec::new();
+        for row in rows {
+            let date: Date<Tz> = row.get("date")?;
+            let value: u64 = row.get("value")?;
+            data.push(Datapoint {
+                date: date.and_hms(0, 0, 0),
+                value,
+            });
+        }
+
+        Ok(data)
+    }
 }
 
 impl Actor for StatisticDatabaseController {}
@@ -440,6 +474,19 @@ impl Message for GetPlayerRankings {
 impl Handler<GetPlayerRankings> for StatisticDatabaseController {
     async fn handle(&mut self, message: GetPlayerRankings, _ctx: &mut Context<Self>) -> <GetPlayerRankings as Message>::Result {
         self.leaderboards.get_player_rankings(&message.0).await
+    }
+}
+
+pub struct DataQuery(pub DataQueryType);
+
+impl Message for DataQuery {
+    type Result = StatisticsDatabaseResult<Vec<Datapoint>>;
+}
+
+#[async_trait]
+impl Handler<DataQuery> for StatisticDatabaseController {
+    async fn handle(&mut self, message: DataQuery, _ctx: &mut Context<Self>) -> <DataQuery as Message>::Result {
+        self.data_query(message.0).await
     }
 }
 

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::DateTime;
 use chrono::Utc;
+use chrono_tz::Tz;
 use clickhouse_rs::Pool;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -133,4 +134,17 @@ pub struct StatisticCounts<T> {
     pub player: T,
     pub global: T,
     pub total: T,
+}
+
+#[derive(Serialize)]
+pub struct Datapoint {
+    pub date: DateTime<Tz>,
+    pub value: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataQueryType {
+    GamesByDay,
+    GamesByMonth,
 }

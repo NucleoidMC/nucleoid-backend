@@ -44,7 +44,7 @@ impl LeaderboardGenerator {
                 ValueType::UInt => row.get::<u64, _>(&*sql.value)? as f64,
                 ValueType::Float => row.get::<f64, _>(&*sql.value)?,
             };
-            Ok(LeaderboardValue { player_id, value: value })
+            Ok(LeaderboardValue { player_id, value })
         });
 
         Ok(Some(stream))
