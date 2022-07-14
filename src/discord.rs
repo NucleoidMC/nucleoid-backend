@@ -253,7 +253,7 @@ impl EventHandler for DiscordHandler {
                 let tokens: Vec<&str> = message.content.split_ascii_whitespace().collect();
                 self.handle_command(&tokens[1..], &ctx, &message).await;
             } else {
-                if message.content.starts_with("//") && check_message_admin(&ctx, &message).await {
+                if message.content.starts_with("//") {
                     self.relay.send_outgoing_command(&ctx, &message).await;
                 } else {
                     self.relay.send_outgoing_chat(&ctx, &message).await;

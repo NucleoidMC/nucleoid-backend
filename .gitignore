@@ -1,6 +1,9 @@
 /target
 /.idea
 
-config.json
+config*.json
 relay.json
 !config/config.json
+
+clickhouse_data/
+postgres_data/

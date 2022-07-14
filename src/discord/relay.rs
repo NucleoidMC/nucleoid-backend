@@ -218,11 +218,17 @@ impl Handler {
         if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
             let command = self.sanitize_message_content(ctx, message).await[2..].to_owned();
             let sender = self.sender_name(ctx, message).await;
+            let roles = if let Ok(member) = message.member(&ctx).await {
+                member.roles.iter().map(ToString::to_string).collect()
+            } else {
+                Vec::new()
+            };
 
             self.controller.do_send_async(OutgoingCommand {
                 channel: channel.clone(),
                 command,
                 sender,
+                roles,
             }).await.expect("controller disconnected");
         }
     }

@@ -114,6 +114,7 @@ pub struct OutgoingCommand {
     pub channel: String,
     pub sender: String,
     pub command: String,
+    pub roles: Vec<String>,
 }
 
 impl Message for OutgoingCommand {
@@ -283,6 +284,7 @@ impl Handler<OutgoingCommand> for Controller {
             let _ = integrations.do_send_async(integrations::OutgoingMessage::Command {
                 command: message.command,
                 sender: message.sender,
+                roles: message.roles,
             }).await;
         }
     }
