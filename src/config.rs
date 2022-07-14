@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
@@ -75,7 +76,8 @@ pub struct StatisticsConfig {
 }
 
 pub(super) fn load() -> Config {
-    let path = Path::new("config.json");
+    let config_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "config.json".to_owned());
+    let path = Path::new(&config_path);
     if path.exists() {
         let mut file = File::open(path).expect("failed to open config");
         serde_json::from_reader(&mut file).expect("failed to parse config")
