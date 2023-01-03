@@ -31,9 +31,13 @@ pub struct DiscordConfig {
     pub error_webhook: Option<ErrorWebhookConfig>,
 }
 
-fn default_ping_interval_minutes() -> u16 { 30 }
+fn default_ping_interval_minutes() -> u16 {
+    30
+}
 
-fn default_lfp_ping_interval_minutes() -> u16 { 10 }
+fn default_lfp_ping_interval_minutes() -> u16 {
+    10
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ErrorWebhookConfig {

@@ -1,11 +1,11 @@
-use std::{time::Duration, num::NonZeroUsize};
+use std::{num::NonZeroUsize, time::Duration};
 
+use crate::TokioGlobal;
 use lru::LruCache;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
-use crate::TokioGlobal;
 
 const USER_AGENT: &str = "nucleoid-backend (v1, https://github.com/NucleoidMC/nucleoid-backend)";
 const MOJANG_PROFILE_URL: &str = "https://sessionserver.mojang.com/session/minecraft/profile";
@@ -17,20 +17,17 @@ pub struct MojangApiClient {
     username_cache: LruCache<Uuid, String>,
 }
 
-impl Actor for MojangApiClient { }
+impl Actor for MojangApiClient {}
 
 impl MojangApiClient {
     pub fn start(cache_size: NonZeroUsize) -> Result<Address<Self>, ClientError> {
         let username_cache = LruCache::new(cache_size);
         let client = Self {
-            client: Client::builder()
-                .user_agent(USER_AGENT)
-                .build()?,
+            client: Client::builder().user_agent(USER_AGENT).build()?,
             username_cache,
         };
 
-        let client = client.create(None)
-            .spawn(&mut TokioGlobal);
+        let client = client.create(None).spawn(&mut TokioGlobal);
 
         let client_weak = client.downgrade();
         // Based on https://github.com/NucleoidMC/player-face-api/blob/main/src/api.rs#L52-L63
@@ -51,8 +48,13 @@ impl MojangApiClient {
         if let Some(username) = self.username_cache.get(uuid) {
             Ok(Some(username.clone()))
         } else {
-            let response = self.client.get(format!("{}/{}", MOJANG_PROFILE_URL, uuid)).send().await?;
-            if response.status().as_u16() == 204 { // mojang why don't you just return a 404 here :/
+            let response = self
+                .client
+                .get(format!("{}/{}", MOJANG_PROFILE_URL, uuid))
+                .send()
+                .await?;
+            if response.status().as_u16() == 204 {
+                // mojang why don't you just return a 404 here :/
                 Ok(None)
             } else {
                 let profile = response.json::<ProfileResponse>().await?;
@@ -78,7 +80,11 @@ impl Message for ClearCache {
 
 #[async_trait::async_trait]
 impl Handler<GetPlayerUsername> for MojangApiClient {
-    async fn handle(&mut self, message: GetPlayerUsername, _ctx: &mut Context<Self>) -> <GetPlayerUsername as Message>::Result {
+    async fn handle(
+        &mut self,
+        message: GetPlayerUsername,
+        _ctx: &mut Context<Self>,
+    ) -> <GetPlayerUsername as Message>::Result {
         let username = self.get_username(&message.0).await?;
         Ok(username.map(|username| ProfileResponse {
             id: message.0,
@@ -89,7 +95,11 @@ impl Handler<GetPlayerUsername> for MojangApiClient {
 
 #[async_trait::async_trait]
 impl Handler<ClearCache> for MojangApiClient {
-    async fn handle(&mut self, _message: ClearCache, _ctx: &mut Context<Self>) -> <ClearCache as Message>::Result {
+    async fn handle(
+        &mut self,
+        _message: ClearCache,
+        _ctx: &mut Context<Self>,
+    ) -> <ClearCache as Message>::Result {
         self.username_cache.clear();
     }
 }

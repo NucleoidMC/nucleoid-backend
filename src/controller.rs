@@ -4,12 +4,12 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use xtra::prelude::*;
 
-use crate::Config;
 use crate::database::{self, DatabaseClient};
 use crate::discord::{self, DiscordClient, ReportError};
 use crate::integrations::{self, IntegrationsClient};
 use crate::model::*;
 use crate::statistics::database::{StatisticDatabaseController, UploadStatsBundle};
+use crate::Config;
 
 // TODO: use numerical channel ids internally?
 pub struct Controller {
@@ -198,9 +198,12 @@ impl Message for BackendError {
 #[async_trait]
 impl Handler<RegisterIntegrationsClient> for Controller {
     async fn handle(&mut self, message: RegisterIntegrationsClient, _ctx: &mut Context<Self>) {
-        self.integration_clients.insert(message.channel.clone(), message.client);
+        self.integration_clients
+            .insert(message.channel.clone(), message.client);
 
-        let status = self.status_by_channel.entry(message.channel)
+        let status = self
+            .status_by_channel
+            .entry(message.channel)
             .or_insert_with(|| ServerStatus::default());
         status.game_version = message.game_version;
         status.server_ip = message.server_ip;
@@ -237,14 +240,22 @@ impl Handler<RegisterDatabaseClient> for Controller {
 
 #[async_trait]
 impl Handler<RegisterStatisticsDatabaseController> for Controller {
-    async fn handle(&mut self, message: RegisterStatisticsDatabaseController, _ctx: &mut Context<Self>) {
+    async fn handle(
+        &mut self,
+        message: RegisterStatisticsDatabaseController,
+        _ctx: &mut Context<Self>,
+    ) {
         self.statistics = Some(message.controller);
     }
 }
 
 #[async_trait]
 impl Handler<GetStatisticsDatabaseController> for Controller {
-    async fn handle(&mut self, _message: GetStatisticsDatabaseController, _ctx: &mut Context<Self>) -> <GetStatisticsDatabaseController as Message>::Result {
+    async fn handle(
+        &mut self,
+        _message: GetStatisticsDatabaseController,
+        _ctx: &mut Context<Self>,
+    ) -> <GetStatisticsDatabaseController as Message>::Result {
         self.statistics.clone()
     }
 }
@@ -252,14 +263,19 @@ impl Handler<GetStatisticsDatabaseController> for Controller {
 #[async_trait]
 impl Handler<IncomingChat> for Controller {
     async fn handle(&mut self, message: IncomingChat, _ctx: &mut Context<Self>) {
-        println!("[{}] <{}> {}", message.channel, message.sender.name, message.content);
+        println!(
+            "[{}] <{}> {}",
+            message.channel, message.sender.name, message.content
+        );
 
         if let Some(discord) = &self.discord {
-            let _ = discord.do_send_async(discord::SendChat {
-                channel: message.channel,
-                sender: message.sender,
-                content: message.content,
-            }).await;
+            let _ = discord
+                .do_send_async(discord::SendChat {
+                    channel: message.channel,
+                    sender: message.sender,
+                    content: message.content,
+                })
+                .await;
         }
     }
 }
@@ -267,10 +283,15 @@ impl Handler<IncomingChat> for Controller {
 #[async_trait]
 impl Handler<OutgoingChat> for Controller {
     async fn handle(&mut self, message: OutgoingChat, _ctx: &mut Context<Self>) {
-        println!("[{}] <@{}> {}", message.channel, message.chat.sender, message.chat.content);
+        println!(
+            "[{}] <@{}> {}",
+            message.channel, message.chat.sender, message.chat.content
+        );
 
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
-            let _ = integrations.do_send_async(integrations::OutgoingMessage::Chat(message.chat)).await;
+            let _ = integrations
+                .do_send_async(integrations::OutgoingMessage::Chat(message.chat))
+                .await;
         }
     }
 }
@@ -278,27 +299,41 @@ impl Handler<OutgoingChat> for Controller {
 #[async_trait]
 impl Handler<OutgoingCommand> for Controller {
     async fn handle(&mut self, message: OutgoingCommand, _ctx: &mut Context<Self>) {
-        println!("[{}] <@{}> /{}", message.channel, message.sender, message.command);
+        println!(
+            "[{}] <@{}> /{}",
+            message.channel, message.sender, message.command
+        );
 
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
-            let _ = integrations.do_send_async(integrations::OutgoingMessage::Command {
-                command: message.command,
-                sender: message.sender,
-                roles: message.roles,
-            }).await;
+            let _ = integrations
+                .do_send_async(integrations::OutgoingMessage::Command {
+                    command: message.command,
+                    sender: message.sender,
+                    roles: message.roles,
+                })
+                .await;
         }
     }
 }
 
 #[async_trait]
 impl Handler<OutgoingServerChange> for Controller {
-    async fn handle(&mut self, message: OutgoingServerChange, _ctx: &mut Context<Self>) -> <OutgoingServerChange as Message>::Result {
-        println!("[{}] {} -> {}", message.channel, message.player, message.target_server);
+    async fn handle(
+        &mut self,
+        message: OutgoingServerChange,
+        _ctx: &mut Context<Self>,
+    ) -> <OutgoingServerChange as Message>::Result {
+        println!(
+            "[{}] {} -> {}",
+            message.channel, message.player, message.target_server
+        );
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
-            let _ = integrations.do_send_async(integrations::OutgoingMessage::SendToServer {
-                player: message.player,
-                target_server: message.target_server,
-            }).await;
+            let _ = integrations
+                .do_send_async(integrations::OutgoingMessage::SendToServer {
+                    player: message.player,
+                    target_server: message.target_server,
+                })
+                .await;
         }
     }
 }
@@ -306,7 +341,9 @@ impl Handler<OutgoingServerChange> for Controller {
 #[async_trait]
 impl Handler<StatusUpdate> for Controller {
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
-        let status = self.status_by_channel.entry(message.channel.clone())
+        let status = self
+            .status_by_channel
+            .entry(message.channel.clone())
             .or_insert_with(|| ServerStatus::default());
 
         if let Some(games) = message.games {
@@ -317,23 +354,32 @@ impl Handler<StatusUpdate> for Controller {
             status.players = players;
         }
 
-        println!("[{}] {} games, {} players", message.channel, status.games.len(), status.players.len());
+        println!(
+            "[{}] {} games, {} players",
+            message.channel,
+            status.games.len(),
+            status.players.len()
+        );
 
         if let Some(discord) = &self.discord {
-            let _ = discord.do_send_async(discord::UpdateRelayStatus {
-                channel: message.channel.clone(),
-                game_version: status.game_version.clone(),
-                server_ip: status.server_ip.clone(),
-                player_count: status.players.len(),
-            }).await;
+            let _ = discord
+                .do_send_async(discord::UpdateRelayStatus {
+                    channel: message.channel.clone(),
+                    game_version: status.game_version.clone(),
+                    server_ip: status.server_ip.clone(),
+                    player_count: status.players.len(),
+                })
+                .await;
         }
 
         if let Some(database) = &self.database {
-            let _ = database.do_send_async(database::WriteStatus {
-                channel: message.channel.clone(),
-                time: SystemTime::now(),
-                status: status.clone(),
-            }).await;
+            let _ = database
+                .do_send_async(database::WriteStatus {
+                    channel: message.channel.clone(),
+                    time: SystemTime::now(),
+                    status: status.clone(),
+                })
+                .await;
         }
     }
 }
@@ -342,11 +388,13 @@ impl Handler<StatusUpdate> for Controller {
 impl Handler<PerformanceUpdate> for Controller {
     async fn handle(&mut self, message: PerformanceUpdate, _ctx: &mut Context<Self>) {
         if let Some(database) = &self.database {
-            let _ = database.do_send_async(database::WritePerformance {
-                channel: message.channel,
-                time: SystemTime::now(),
-                performance: message.performance
-            }).await;
+            let _ = database
+                .do_send_async(database::WritePerformance {
+                    channel: message.channel,
+                    time: SystemTime::now(),
+                    performance: message.performance,
+                })
+                .await;
         }
     }
 }
@@ -357,23 +405,28 @@ impl Handler<ServerLifecycleStart> for Controller {
         println!("[{}] started", message.channel);
 
         if let Some(discord) = &self.discord {
-            let _ = discord.do_send_async(discord::SendSystem {
-                channel: message.channel.clone(),
-                content: format!("{} has started!", match message.server_type {
-                    ServerType::Minecraft => "Server",
-                    ServerType::Velocity => "Proxy",
-                }),
-            }).await;
+            let _ = discord
+                .do_send_async(discord::SendSystem {
+                    channel: message.channel.clone(),
+                    content: format!(
+                        "{} has started!",
+                        match message.server_type {
+                            ServerType::Minecraft => "Server",
+                            ServerType::Velocity => "Proxy",
+                        }
+                    ),
+                })
+                .await;
         }
 
         if let Some(kickback) = self.config.kickbacks.get(&*message.channel) {
             if let Some(proxy_client) = self.integration_clients.get(&*kickback.proxy_channel) {
-                let _ = proxy_client.do_send_async(
-                    integrations::OutgoingMessage::SendServerToServer {
+                let _ = proxy_client
+                    .do_send_async(integrations::OutgoingMessage::SendServerToServer {
                         from_server: kickback.from_server.clone(),
                         to_server: kickback.to_server.clone(),
-                    }
-                ).await;
+                    })
+                    .await;
             }
         }
     }
@@ -387,21 +440,29 @@ impl Handler<ServerLifecycleStop> for Controller {
 
         if let Some(discord) = &self.discord {
             let content = if message.crash {
-                format!("{} has crashed!", match message.server_type {
-                    ServerType::Minecraft => "Server",
-                    ServerType::Velocity => "Proxy",
-                })
+                format!(
+                    "{} has crashed!",
+                    match message.server_type {
+                        ServerType::Minecraft => "Server",
+                        ServerType::Velocity => "Proxy",
+                    }
+                )
             } else {
-                format!("{} has stopped!", match message.server_type {
-                    ServerType::Minecraft => "Server",
-                    ServerType::Velocity => "Proxy",
-                })
+                format!(
+                    "{} has stopped!",
+                    match message.server_type {
+                        ServerType::Minecraft => "Server",
+                        ServerType::Velocity => "Proxy",
+                    }
+                )
             };
 
-            let _ = discord.do_send_async(discord::SendSystem {
-                channel: message.channel,
-                content: content.to_owned(),
-            }).await;
+            let _ = discord
+                .do_send_async(discord::SendSystem {
+                    channel: message.channel,
+                    content: content.to_owned(),
+                })
+                .await;
         }
     }
 }
@@ -412,17 +473,23 @@ impl Handler<ServerSystemMessage> for Controller {
         println!("[{}] {}", message.channel, message.content);
 
         if let Some(discord) = &self.discord {
-            let _ = discord.do_send_async(discord::SendSystem {
-                channel: message.channel,
-                content: message.content,
-            }).await;
+            let _ = discord
+                .do_send_async(discord::SendSystem {
+                    channel: message.channel,
+                    content: message.content,
+                })
+                .await;
         }
     }
 }
 
 #[async_trait]
 impl Handler<GetStatus> for Controller {
-    async fn handle(&mut self, message: GetStatus, _ctx: &mut Context<Self>) -> Option<ServerStatus> {
+    async fn handle(
+        &mut self,
+        message: GetStatus,
+        _ctx: &mut Context<Self>,
+    ) -> Option<ServerStatus> {
         self.status_by_channel.get(&message.0).cloned()
     }
 }
@@ -431,20 +498,29 @@ impl Handler<GetStatus> for Controller {
 impl Handler<BackendError> for Controller {
     async fn handle(&mut self, message: BackendError, _ctx: &mut Context<Self>) {
         if let Some(discord) = &self.discord {
-            let _ = discord.do_send_async(ReportError {
-                title: message.title,
-                description: message.description,
-                fields: message.fields,
-            }).await;
+            let _ = discord
+                .do_send_async(ReportError {
+                    title: message.title,
+                    description: message.description,
+                    fields: message.fields,
+                })
+                .await;
         }
     }
 }
 
 #[async_trait]
 impl Handler<UploadStatsBundle> for Controller {
-    async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) -> <UploadStatsBundle as Message>::Result {
+    async fn handle(
+        &mut self,
+        message: UploadStatsBundle,
+        _ctx: &mut Context<Self>,
+    ) -> <UploadStatsBundle as Message>::Result {
         if let Some(statistics) = &self.statistics {
-            statistics.send(message).await.expect("statistics controller disconnected")
+            statistics
+                .send(message)
+                .await
+                .expect("statistics controller disconnected")
         }
     }
 }

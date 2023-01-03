@@ -3,7 +3,9 @@ pub mod database;
 use std::collections::HashMap;
 
 use futures::{Stream, StreamExt};
-use nucleoid_leaderboards::model::{Aggregate, LeaderboardDefinition, LeaderboardQuery, Ranking, UnitConversion, ValueType};
+use nucleoid_leaderboards::model::{
+    Aggregate, LeaderboardDefinition, LeaderboardQuery, Ranking, UnitConversion, ValueType,
+};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -30,13 +32,19 @@ impl LeaderboardGenerator {
         }
     }
 
-    pub async fn build_leaderboard<'a>(&self, handle: &'a mut clickhouse_rs::ClientHandle, id: &str) -> StatisticsDatabaseResult<Option<impl Stream<Item = StatisticsDatabaseResult<LeaderboardValue>> + 'a>> {
+    pub async fn build_leaderboard<'a>(
+        &self,
+        handle: &'a mut clickhouse_rs::ClientHandle,
+        id: &str,
+    ) -> StatisticsDatabaseResult<
+        Option<impl Stream<Item = StatisticsDatabaseResult<LeaderboardValue>> + 'a>,
+    > {
         let sql = match self.definitions.get(id) {
             Some(sql) => sql.1.clone(),
             None => return Ok(None),
         };
 
-        let stream = handle.query(&sql.sql).stream().map(move |row|  {
+        let stream = handle.query(&sql.sql).stream().map(move |row| {
             let row = row?;
             let player_id: Uuid = row.get(&*sql.player)?;
             let value = match sql.value_type {
@@ -51,7 +59,10 @@ impl LeaderboardGenerator {
     }
 
     pub fn list_all_leaderboards(&self) -> Vec<String> {
-        self.definitions.keys().map(Clone::clone).collect::<Vec<_>>()
+        self.definitions
+            .keys()
+            .map(Clone::clone)
+            .collect::<Vec<_>>()
     }
 }
 
@@ -111,7 +122,7 @@ fn build_sql(definition: &LeaderboardDefinition) -> LeaderboardSql {
             player: "player_id".to_string(),
             value: "value".to_string(),
             value_type: ValueType::Float,
-        }
+        },
     }
 }
 

@@ -4,22 +4,22 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{error, info, warn};
 use serde_json::json;
-use serenity::CacheAndHttp;
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Embed, Message as SerenityMessage, Reaction};
 use serenity::prelude::*;
+use serenity::CacheAndHttp;
+use xtra::prelude::*;
 use xtra::Context as XtraContext;
 use xtra::KeepRunning;
 use xtra::Message as XtraMessage;
-use xtra::prelude::*;
 
-use crate::{DiscordConfig, Persistent, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
+use crate::{DiscordConfig, Persistent, TokioGlobal};
 
-mod relay;
-mod pings;
 mod lfp;
+mod pings;
+mod relay;
 
 pub struct DiscordClient {
     controller: Address<Controller>,
@@ -63,7 +63,9 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         },
     };
 
-    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGE_REACTIONS;
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::GUILDS
+        | GatewayIntents::GUILD_MESSAGE_REACTIONS;
 
     let mut client = Client::builder(config.token, intents)
         .event_handler(handler)
@@ -77,12 +79,17 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         data.insert::<lfp::StoreKey>(lfp_store);
     }
 
-    address.do_send_async(Init {
-        cache_and_http: client.cache_and_http.clone(),
-        data: client.data.clone(),
-    }).await.expect("client disconnected");
+    address
+        .do_send_async(Init {
+            cache_and_http: client.cache_and_http.clone(),
+            data: client.data.clone(),
+        })
+        .await
+        .expect("client disconnected");
 
-    controller.do_send_async(RegisterDiscordClient { client: address }).await
+    controller
+        .do_send_async(RegisterDiscordClient { client: address })
+        .await
         .expect("controller disconnected");
 
     client.start().await.expect("failed to run client");
@@ -187,8 +194,14 @@ impl Handler<UpdateRelayStatus> for DiscordClient {
 #[async_trait]
 impl Handler<ReportError> for DiscordClient {
     async fn handle(&mut self, message: ReportError, _ctx: &mut XtraContext<Self>) {
-        if let (Some(cache_and_http), Some(webhook_config)) = (&self.cache_and_http, &self.config.error_webhook) {
-            if let Ok(webhook) = &cache_and_http.http.get_webhook_with_token(webhook_config.id, &*webhook_config.token).await {
+        if let (Some(cache_and_http), Some(webhook_config)) =
+            (&self.cache_and_http, &self.config.error_webhook)
+        {
+            if let Ok(webhook) = &cache_and_http
+                .http
+                .get_webhook_with_token(webhook_config.id, &*webhook_config.token)
+                .await
+            {
                 let embed = Embed::fake(|e| {
                     e.title(message.title);
                     e.description(message.description);
@@ -200,11 +213,14 @@ impl Handler<ReportError> for DiscordClient {
                     e
                 });
 
-                if let Err(e) = webhook.execute(&cache_and_http.http, false, |w| {
-                    w.embeds(vec![embed]);
-                    w.username("Backend error reporting");
-                    w
-                }).await {
+                if let Err(e) = webhook
+                    .execute(&cache_and_http.http, false, |w| {
+                        w.embeds(vec![embed]);
+                        w.username("Backend error reporting");
+                        w
+                    })
+                    .await
+                {
                     warn!("Failed to report error to discord: {}", e);
                 }
             } else {
@@ -221,16 +237,27 @@ struct DiscordHandler {
 }
 
 impl DiscordHandler {
-    async fn handle_command(&self, tokens: &[&str], ctx: &SerenityContext, message: &SerenityMessage) {
+    async fn handle_command(
+        &self,
+        tokens: &[&str],
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) {
         let admin = check_message_admin(&ctx, &message).await;
 
         let result = match tokens {
-            ["relay", "connect", channel] if admin => self.relay.connect(channel, ctx, message).await,
+            ["relay", "connect", channel] if admin => {
+                self.relay.connect(channel, ctx, message).await
+            }
             ["relay", "disconnect"] if admin => self.relay.disconnect(ctx, message).await,
             ["ping", "add", ping, role] if admin => self.pings.add(ctx, message, ping, role).await,
             ["ping", "remove", ping] if admin => self.pings.remove(ctx, message, ping).await,
-            ["ping", "allow", ping, role] if admin => self.pings.allow_for_role(ctx, message, ping, role).await,
-            ["ping", "disallow", ping, role] if admin => self.pings.disallow_for_role(ctx, message, ping, role).await,
+            ["ping", "allow", ping, role] if admin => {
+                self.pings.allow_for_role(ctx, message, ping, role).await
+            }
+            ["ping", "disallow", ping, role] if admin => {
+                self.pings.disallow_for_role(ctx, message, ping, role).await
+            }
             ["ping", "request", ping, ..] => self.pings.request(ctx, message, ping).await,
             ["lfp", "setup", ..] => self.lfp.setup_for_channel(ctx, message).await,
             _ => Err(CommandError::InvalidCommand),

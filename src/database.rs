@@ -6,15 +6,21 @@ use deadpool_postgres::Pool;
 use log::error;
 use xtra::prelude::*;
 
-use crate::{DatabaseConfig, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
+use crate::{DatabaseConfig, TokioGlobal};
 
 pub async fn run(controller: Address<Controller>, pool: Pool, config: DatabaseConfig) {
-    let database = DatabaseClient { pool, _config: config, channels: HashMap::new() };
+    let database = DatabaseClient {
+        pool,
+        _config: config,
+        channels: HashMap::new(),
+    };
     let database = database.create(None).spawn(&mut TokioGlobal);
 
-    controller.do_send_async(RegisterDatabaseClient { client: database }).await
+    controller
+        .do_send_async(RegisterDatabaseClient { client: database })
+        .await
         .expect("controller disconnected");
 }
 
@@ -28,7 +34,7 @@ impl DatabaseClient {
     async fn get_or_open_channel(
         channels: &mut HashMap<String, ChannelDatabase>,
         pool: Pool,
-        channel: String
+        channel: String,
     ) -> Result<&mut ChannelDatabase> {
         use std::collections::hash_map::Entry::*;
         match channels.entry(channel) {
@@ -73,10 +79,18 @@ impl Message for GetPostgresPool {
 #[async_trait]
 impl Handler<WriteStatus> for DatabaseClient {
     async fn handle(&mut self, message: WriteStatus, _ctx: &mut Context<Self>) {
-        let channel = DatabaseClient::get_or_open_channel(&mut self.channels, self.pool.clone(), message.channel).await
-            .expect("failed to open database for channel");
+        let channel = DatabaseClient::get_or_open_channel(
+            &mut self.channels,
+            self.pool.clone(),
+            message.channel,
+        )
+        .await
+        .expect("failed to open database for channel");
 
-        if let Err(err) = channel.write_status(self.pool.clone(), message.time, message.status).await {
+        if let Err(err) = channel
+            .write_status(self.pool.clone(), message.time, message.status)
+            .await
+        {
             error!("failed to write status to database: {:?}", err);
         }
     }
@@ -85,10 +99,18 @@ impl Handler<WriteStatus> for DatabaseClient {
 #[async_trait]
 impl Handler<WritePerformance> for DatabaseClient {
     async fn handle(&mut self, message: WritePerformance, _ctx: &mut Context<Self>) {
-        let channel = DatabaseClient::get_or_open_channel(&mut self.channels, self.pool.clone(), message.channel).await
-            .expect("failed to open database for channel");
+        let channel = DatabaseClient::get_or_open_channel(
+            &mut self.channels,
+            self.pool.clone(),
+            message.channel,
+        )
+        .await
+        .expect("failed to open database for channel");
 
-        if let Err(err) = channel.write_performance(self.pool.clone(), message.time, message.performance).await {
+        if let Err(err) = channel
+            .write_performance(self.pool.clone(), message.time, message.performance)
+            .await
+        {
             error!("failed to write status to database: {:?}", err);
         }
     }
@@ -96,7 +118,11 @@ impl Handler<WritePerformance> for DatabaseClient {
 
 #[async_trait]
 impl Handler<GetPostgresPool> for DatabaseClient {
-    async fn handle(&mut self, _message: GetPostgresPool, _ctx: &mut Context<Self>) -> <GetPostgresPool as Message>::Result {
+    async fn handle(
+        &mut self,
+        _message: GetPostgresPool,
+        _ctx: &mut Context<Self>,
+    ) -> <GetPostgresPool as Message>::Result {
         self.pool.clone()
     }
 }
@@ -111,7 +137,8 @@ impl ChannelDatabase {
         let status_table = format!("{}_server_status", channel);
         let performance_table = format!("{}_server_performance", channel);
 
-        let create_status_table = format!(r#"
+        let create_status_table = format!(
+            r#"
             CREATE TABLE IF NOT EXISTS {} (
                 time TIMESTAMP WITHOUT TIME ZONE NOT NULL PRIMARY KEY,
                 player_count SMALLINT NOT NULL,
@@ -119,9 +146,12 @@ impl ChannelDatabase {
 
                 UNIQUE(time)
             )
-        "#, status_table);
+        "#,
+            status_table
+        );
 
-        let create_performance_table = format!(r#"
+        let create_performance_table = format!(
+            r#"
             CREATE TABLE IF NOT EXISTS {} (
                 time TIMESTAMP WITHOUT TIME ZONE NOT NULL PRIMARY KEY,
                 average_tick_ms REAL NOT NULL,
@@ -134,7 +164,9 @@ impl ChannelDatabase {
 
                 UNIQUE(time)
             )
-        "#, performance_table);
+        "#,
+            performance_table
+        );
 
         let client = pool.get().await?;
 
@@ -144,17 +176,23 @@ impl ChannelDatabase {
         let create_performance_table = client.prepare(&create_performance_table).await?;
         client.execute(&create_performance_table, &[]).await?;
 
-        let add_status = format!(r#"
+        let add_status = format!(
+            r#"
             INSERT INTO {} (time, player_count, game_count) VALUES ($1, $2, $3)
-        "#, status_table);
+        "#,
+            status_table
+        );
 
-        let add_performance = format!(r#"
+        let add_performance = format!(
+            r#"
             INSERT INTO {} (time, average_tick_ms, tps, dimensions, entities, chunks, used_memory, total_memory) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#, performance_table);
+        "#,
+            performance_table
+        );
 
         Ok(ChannelDatabase {
             add_status,
-            add_performance
+            add_performance,
         })
     }
 
@@ -163,11 +201,18 @@ impl ChannelDatabase {
         let player_count = status.players.len() as i16;
         let game_count = status.games.len() as i16;
         let statement = client.prepare_cached(&self.add_status).await?;
-        client.execute(&statement, &[&time, &player_count, &game_count]).await?;
+        client
+            .execute(&statement, &[&time, &player_count, &game_count])
+            .await?;
         Ok(())
     }
 
-    async fn write_performance(&self, pool: Pool, time: SystemTime, performance: ServerPerformance) -> Result<()> {
+    async fn write_performance(
+        &self,
+        pool: Pool,
+        time: SystemTime,
+        performance: ServerPerformance,
+    ) -> Result<()> {
         let client = pool.get().await?;
         let average_tick_ms = performance.average_tick_ms as f32;
         let tps = performance.tps as i16;
@@ -178,7 +223,21 @@ impl ChannelDatabase {
         let total_memory = performance.total_memory as i64;
 
         let statement = client.prepare_cached(&self.add_performance).await?;
-        client.execute(&statement, &[&time, &average_tick_ms, &tps, &dimensions, &entities, &chunks, &used_memory, &total_memory]).await?;
+        client
+            .execute(
+                &statement,
+                &[
+                    &time,
+                    &average_tick_ms,
+                    &tps,
+                    &dimensions,
+                    &entities,
+                    &chunks,
+                    &used_memory,
+                    &total_memory,
+                ],
+            )
+            .await?;
         Ok(())
     }
 }
