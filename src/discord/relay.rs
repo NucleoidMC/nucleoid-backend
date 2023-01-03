@@ -30,7 +30,8 @@ pub struct Store {
 
 impl Store {
     pub fn insert_relay(&mut self, channel: String, relay: ChannelRelay) {
-        self.discord_to_channel.insert(relay.discord_channel, channel.clone());
+        self.discord_to_channel
+            .insert(relay.discord_channel, channel.clone());
         self.channel_to_relay.insert(channel, relay);
     }
 
@@ -40,7 +41,7 @@ impl Store {
                 let relay = self.channel_to_relay.remove(&channel);
                 relay.map(move |relay| (channel, relay))
             }
-            None => None
+            None => None,
         }
     }
 }
@@ -58,7 +59,10 @@ impl<'de> Deserialize<'de> for Store {
         for (channel, relay) in &channel_to_relay {
             discord_to_channel.insert(relay.discord_channel, channel.clone());
         }
-        Ok(Store { channel_to_relay, discord_to_channel })
+        Ok(Store {
+            channel_to_relay,
+            discord_to_channel,
+        })
     }
 }
 
@@ -75,21 +79,24 @@ pub async fn send_chat(discord: &mut DiscordClient, send_chat: SendChat) {
         if let Some(relay) = relay_store.channel_to_relay.get(&send_chat.channel) {
             let avatar_url = &discord.config.player_avatar_url;
 
-            let result = relay.webhook.execute(&cache_and_http.http, false, move |webhook| {
-                let mut webhook = webhook
-                    .username(send_chat.sender.name)
-                    .content(send_chat.content);
+            let result = relay
+                .webhook
+                .execute(&cache_and_http.http, false, move |webhook| {
+                    let mut webhook = webhook
+                        .username(send_chat.sender.name)
+                        .content(send_chat.content);
 
-                webhook.0.insert("allowed_mentions", json!({"parse": []}));
+                    webhook.0.insert("allowed_mentions", json!({"parse": []}));
 
-                if let Some(avatar_url) = avatar_url {
-                    let id = send_chat.sender.id.replace("-", "");
-                    let avatar_url = format!("{}/{}", avatar_url, id);
-                    webhook = webhook.avatar_url(avatar_url);
-                }
+                    if let Some(avatar_url) = avatar_url {
+                        let id = send_chat.sender.id.replace("-", "");
+                        let avatar_url = format!("{}/{}", avatar_url, id);
+                        webhook = webhook.avatar_url(avatar_url);
+                    }
 
-                webhook
-            }).await;
+                    webhook
+                })
+                .await;
 
             if let Err(error) = result {
                 warn!("failed to relay chat message over webhook: {:?}", error);
@@ -103,9 +110,13 @@ pub async fn send_system(discord: &mut DiscordClient, send_system: SendSystem) {
         let data = data.read().await;
         let relay_store = data.get::<StoreKey>().unwrap();
         if let Some(relay) = relay_store.channel_to_relay.get(&send_system.channel) {
-            let result = ChannelId(relay.discord_channel).send_message(&cache_and_http.http, move |message| {
-                message.content(send_system.content).allowed_mentions(|m| m.empty_parse())
-            }).await;
+            let result = ChannelId(relay.discord_channel)
+                .send_message(&cache_and_http.http, move |message| {
+                    message
+                        .content(send_system.content)
+                        .allowed_mentions(|m| m.empty_parse())
+                })
+                .await;
 
             if let Err(error) = result {
                 warn!("failed to send system message: {:?}", error);
@@ -125,20 +136,27 @@ pub async fn update_status(discord: &mut DiscordClient, update_relay: UpdateRela
 
         if let Some(relay) = relay_store.channel_to_relay.get(&update_relay.channel) {
             let topic = match update_relay.server_ip {
-                Some(ip) => format!("{} @ {} | {} players online", ip, update_relay.game_version, update_relay.player_count),
-                None => format!("{} | {} players online", update_relay.game_version, update_relay.player_count)
+                Some(ip) => format!(
+                    "{} @ {} | {} players online",
+                    ip, update_relay.game_version, update_relay.player_count
+                ),
+                None => format!(
+                    "{} | {} players online",
+                    update_relay.game_version, update_relay.player_count
+                ),
             };
 
-            if let Some(Channel::Guild(channel)) = cache_and_http.cache.channel(relay.discord_channel) {
+            if let Some(Channel::Guild(channel)) =
+                cache_and_http.cache.channel(relay.discord_channel)
+            {
                 if channel.topic.as_ref() == Some(&topic) {
                     return;
                 }
             }
 
             let edit_result = ChannelId(relay.discord_channel)
-                .edit(&cache_and_http.http, move |channel| {
-                    channel.topic(topic)
-                }).await;
+                .edit(&cache_and_http.http, move |channel| channel.topic(topic))
+                .await;
 
             if let Err(error) = edit_result {
                 error!("failed to update channel topic: {:?}", error);
@@ -153,7 +171,12 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub async fn connect(&self, channel: &str, ctx: &SerenityContext, message: &SerenityMessage) -> CommandResult {
+    pub async fn connect(
+        &self,
+        channel: &str,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) -> CommandResult {
         let mut data = ctx.data.write().await;
 
         let relay_store = data.get_mut::<StoreKey>().unwrap();
@@ -163,37 +186,49 @@ impl Handler {
 
         match message.channel(ctx).await {
             Ok(Channel::Guild(guild_channel)) => {
-                let webhook = guild_channel.create_webhook(&ctx.http, format!("Relay ({})", channel)).await?;
+                let webhook = guild_channel
+                    .create_webhook(&ctx.http, format!("Relay ({})", channel))
+                    .await?;
 
                 let relay = ChannelRelay {
                     discord_channel: message.channel_id.0,
                     webhook,
                 };
 
-                relay_store.write(move |relay_store| {
-                    relay_store.insert_relay(channel.to_owned(), relay);
-                }).await;
+                relay_store
+                    .write(move |relay_store| {
+                        relay_store.insert_relay(channel.to_owned(), relay);
+                    })
+                    .await;
 
                 Ok(())
             }
-            _ => Err(CommandError::CannotRunHere)
+            _ => Err(CommandError::CannotRunHere),
         }
     }
 
-    pub async fn disconnect(&self, ctx: &SerenityContext, message: &SerenityMessage) -> CommandResult {
+    pub async fn disconnect(
+        &self,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) -> CommandResult {
         let mut data = ctx.data.write().await;
 
         let relay_store = data.get_mut::<StoreKey>().unwrap();
 
-        let (_, relay) = relay_store.write(|relay_store| {
-            match relay_store.remove_relay(message.channel_id.0) {
-                Some(channel) => Ok(channel),
-                None => Err(CommandError::ChannelNotConnected),
-            }
-        }).await?;
+        let (_, relay) = relay_store
+            .write(
+                |relay_store| match relay_store.remove_relay(message.channel_id.0) {
+                    Some(channel) => Ok(channel),
+                    None => Err(CommandError::ChannelNotConnected),
+                },
+            )
+            .await?;
 
         // the unwrap of the token shouldn't fail as we should always receieve it when creating the webhook
-        ctx.http.delete_webhook_with_token(relay.webhook.id.0, &relay.webhook.token.unwrap()).await?;
+        ctx.http
+            .delete_webhook_with_token(relay.webhook.id.0, &relay.webhook.token.unwrap())
+            .await?;
 
         Ok(())
     }
@@ -205,10 +240,13 @@ impl Handler {
         if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
             let message = self.parse_outgoing_chat_with_reply(ctx, message).await;
 
-            self.controller.do_send_async(OutgoingChat {
-                channel: channel.clone(),
-                chat: message,
-            }).await.expect("controller disconnected");
+            self.controller
+                .do_send_async(OutgoingChat {
+                    channel: channel.clone(),
+                    chat: message,
+                })
+                .await
+                .expect("controller disconnected");
         }
     }
 
@@ -225,16 +263,23 @@ impl Handler {
                 Vec::new()
             };
 
-            self.controller.do_send_async(OutgoingCommand {
-                channel: channel.clone(),
-                command,
-                sender,
-                roles,
-            }).await.expect("controller disconnected");
+            self.controller
+                .do_send_async(OutgoingCommand {
+                    channel: channel.clone(),
+                    command,
+                    sender,
+                    roles,
+                })
+                .await
+                .expect("controller disconnected");
         }
     }
 
-    async fn parse_outgoing_chat_with_reply(&self, ctx: &SerenityContext, message: &SerenityMessage) -> ChatMessage {
+    async fn parse_outgoing_chat_with_reply(
+        &self,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) -> ChatMessage {
         let mut chat = self.parse_outgoing_chat(ctx, message).await;
 
         if let Some(replying_to) = &message.referenced_message {
@@ -245,7 +290,11 @@ impl Handler {
         chat
     }
 
-    async fn parse_outgoing_chat(&self, ctx: &SerenityContext, message: &SerenityMessage) -> ChatMessage {
+    async fn parse_outgoing_chat(
+        &self,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) -> ChatMessage {
         let sender = self.sender_name(ctx, message).await;
         let sender_user = DiscordUser {
             id: message.author.id.0,
@@ -257,21 +306,37 @@ impl Handler {
 
         let content = self.sanitize_message_content(ctx, message).await;
 
-        let attachments = message.attachments.iter()
+        let attachments = message
+            .attachments
+            .iter()
             .map(|attachment| ChatAttachment {
                 name: attachment.filename.clone(),
                 url: attachment.url.clone(),
             })
             .collect();
 
-        ChatMessage { sender, sender_user, content, name_color, attachments, replying_to: None }
+        ChatMessage {
+            sender,
+            sender_user,
+            content,
+            name_color,
+            attachments,
+            replying_to: None,
+        }
     }
 
     async fn sender_name(&self, ctx: &SerenityContext, message: &SerenityMessage) -> String {
-        message.author_nick(&ctx).await.unwrap_or(message.author.name.clone())
+        message
+            .author_nick(&ctx)
+            .await
+            .unwrap_or(message.author.name.clone())
     }
 
-    async fn sanitize_message_content(&self, ctx: &SerenityContext, message: &SerenityMessage) -> String {
+    async fn sanitize_message_content(
+        &self,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) -> String {
         lazy_static! {
             static ref CUSTOM_EMOJI_PATTERN: Regex = Regex::new(r#"<:([^>]*>)"#).unwrap();
         }
@@ -291,10 +356,16 @@ impl Handler {
         content
     }
 
-    async fn get_sender_name_color(&self, ctx: &SerenityContext, message: &SerenityMessage) -> Option<u32> {
+    async fn get_sender_name_color(
+        &self,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) -> Option<u32> {
         if let (Some(member), Some(guild)) = (&message.member, message.guild_id) {
             if let Some(guild) = ctx.cache.guild(guild) {
-                return member.roles.iter()
+                return member
+                    .roles
+                    .iter()
                     .filter_map(|id| guild.roles.get(id))
                     .filter(|role| role.colour.0 != 0)
                     .max_by_key(|role| role.position)

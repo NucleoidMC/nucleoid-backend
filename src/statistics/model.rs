@@ -108,15 +108,15 @@ impl Into<f64> for UploadStat {
     fn into(self) -> f64 {
         // I hate this but until anyone else has a better idea then this will stay
         match self {
-            UploadStat::FloatTotal(v) |
-            UploadStat::FloatMin(v) |
-            UploadStat::FloatMax(v) |
-            UploadStat::FloatRollingAverage(v) => v,
+            UploadStat::FloatTotal(v)
+            | UploadStat::FloatMin(v)
+            | UploadStat::FloatMax(v)
+            | UploadStat::FloatRollingAverage(v) => v,
 
-            UploadStat::IntTotal(v) |
-            UploadStat::IntMin(v) |
-            UploadStat::IntMax(v) |
-            UploadStat::IntRollingAverage(v) => v as f64,
+            UploadStat::IntTotal(v)
+            | UploadStat::IntMin(v)
+            | UploadStat::IntMax(v)
+            | UploadStat::IntRollingAverage(v) => v as f64,
         }
     }
 }

@@ -19,10 +19,14 @@ impl<T: Persistable> Persistent<T> {
         let path = path.into();
 
         let inner = if path.exists() {
-            let mut file = File::open(&path).await.expect("failed to open persistent file");
+            let mut file = File::open(&path)
+                .await
+                .expect("failed to open persistent file");
 
             let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes).await.expect("failed to load persistent file");
+            file.read_to_end(&mut bytes)
+                .await
+                .expect("failed to load persistent file");
 
             serde_json::from_slice(&bytes).expect("failed to deserialize persistent file")
         } else {
@@ -34,7 +38,8 @@ impl<T: Persistable> Persistent<T> {
 
     #[inline]
     pub async fn write<F, R>(&mut self, f: F) -> R
-        where F: FnOnce(&mut T) -> R
+    where
+        F: FnOnce(&mut T) -> R,
     {
         let result = f(&mut self.inner);
         self.flush().await;
@@ -48,10 +53,14 @@ impl<T: Persistable> Persistent<T> {
     }
 
     pub async fn flush(&mut self) {
-        let mut file = File::create(&self.path).await.expect("failed to create persistent file");
+        let mut file = File::create(&self.path)
+            .await
+            .expect("failed to create persistent file");
 
         let bytes = serde_json::to_vec(&self.inner).expect("failed to serialize persistent file");
-        file.write_all(&bytes).await.expect("failed to write to persistent file");
+        file.write_all(&bytes)
+            .await
+            .expect("failed to write to persistent file");
     }
 
     #[inline]

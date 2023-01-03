@@ -11,7 +11,8 @@ pub struct ServerStatus {
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum ServerType {
-    Minecraft, Velocity
+    Minecraft,
+    Velocity,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

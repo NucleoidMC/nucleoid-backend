@@ -8,25 +8,28 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::net::{TcpListener, TcpStream};
-use xtra::KeepRunning;
 use xtra::prelude::*;
+use xtra::KeepRunning;
 
-use crate::{IntegrationsConfig, TokioGlobal};
 use crate::controller::*;
 use crate::model::*;
-use crate::statistics::model::GameStatsBundle;
 use crate::statistics::database::UploadStatsBundle;
+use crate::statistics::model::GameStatsBundle;
+use crate::{IntegrationsConfig, TokioGlobal};
 use uuid::Uuid;
 
 const MAX_FRAME_LENGTH: usize = 4 * 1024 * 1024;
 const FRAME_HEADER_SIZE: usize = 4;
 
 pub async fn run(controller: Address<Controller>, config: IntegrationsConfig) {
-    let listener = TcpListener::bind(&format!("0.0.0.0:{}", config.port)).await
+    let listener = TcpListener::bind(&format!("0.0.0.0:{}", config.port))
+        .await
         .expect("failed to open integrations listener");
 
     loop {
-        let (stream, addr) = listener.accept().await
+        let (stream, addr) = listener
+            .accept()
+            .await
             .expect("failed to accept integrations connection");
 
         info!("accepting integrations connection from {:?}", addr);
@@ -48,20 +51,25 @@ struct Handshake {
     server_type: ServerType,
 }
 
-async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut S) -> Result<Handshake> {
+async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(
+    stream: &mut S,
+) -> Result<Handshake> {
     match stream.next().await {
-        Some(HandleIncomingMessage(result)) => {
-            match result {
-                Ok(IncomingMessage::Handshake { channel, game_version, server_ip, server_type }) => Ok(Handshake {
-                    channel,
-                    game_version,
-                    server_ip,
-                    server_type: server_type.unwrap_or(ServerType::Minecraft),
-                }),
-                Ok(_) => Err(Error::MissingHandshake),
-                Err(err) => Err(err),
-            }
-        }
+        Some(HandleIncomingMessage(result)) => match result {
+            Ok(IncomingMessage::Handshake {
+                channel,
+                game_version,
+                server_ip,
+                server_type,
+            }) => Ok(Handshake {
+                channel,
+                game_version,
+                server_ip,
+                server_type: server_type.unwrap_or(ServerType::Minecraft),
+            }),
+            Ok(_) => Err(Error::MissingHandshake),
+            Err(err) => Err(err),
+        },
         None => Err(Error::MissingHandshake),
     }
 }
@@ -69,9 +77,17 @@ async fn handshake<S: Stream<Item = HandleIncomingMessage> + Unpin>(stream: &mut
 async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Result<()> {
     let (sink, mut stream) = split_framed(stream);
     let handshake = handshake(&mut stream).await?;
-    let (channel, game_version, server_ip, server_type) = (handshake.channel, handshake.game_version, handshake.server_ip, handshake.server_type);
+    let (channel, game_version, server_ip, server_type) = (
+        handshake.channel,
+        handshake.game_version,
+        handshake.server_ip,
+        handshake.server_type,
+    );
 
-    info!("received handshake for: {} (type: {:?})", channel, server_type);
+    info!(
+        "received handshake for: {} (type: {:?})",
+        channel, server_type
+    );
 
     let client = IntegrationsClient {
         controller: controller.clone(),
@@ -82,7 +98,14 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
 
     let client = client.create(None).spawn(&mut TokioGlobal);
 
-    controller.do_send_async(RegisterIntegrationsClient { channel, game_version, server_ip, client: client.clone() }).await
+    controller
+        .do_send_async(RegisterIntegrationsClient {
+            channel,
+            game_version,
+            server_ip,
+            client: client.clone(),
+        })
+        .await
         .expect("controller disconnected");
 
     Ok(client.attach_stream(stream).await)
@@ -98,7 +121,9 @@ pub struct IntegrationsClient {
 #[async_trait]
 impl Actor for IntegrationsClient {
     async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
-        let unregister = UnregisterIntegrationsClient { channel: self.channel.clone() };
+        let unregister = UnregisterIntegrationsClient {
+            channel: self.channel.clone(),
+        };
         let _ = self.controller.do_send_async(unregister).await;
         KeepRunning::StopAll
     }
@@ -115,10 +140,7 @@ pub enum IncomingMessage {
         server_type: Option<ServerType>,
     },
     #[serde(rename = "chat")]
-    Chat {
-        sender: Player,
-        content: String,
-    },
+    Chat { sender: Player, content: String },
     #[serde(rename = "status")]
     Status {
         #[serde(default)]
@@ -129,15 +151,11 @@ pub enum IncomingMessage {
     #[serde(rename = "lifecycle_start")]
     LifecycleStart {},
     #[serde(rename = "lifecycle_stop")]
-    LifecycleStop {
-        crash: bool,
-    },
+    LifecycleStop { crash: bool },
     #[serde(rename = "performance")]
     Performance(ServerPerformance),
     #[serde(rename = "system")]
-    SystemMessage {
-        content: String,
-    },
+    SystemMessage { content: String },
     #[serde(rename = "upload_statistics")]
     UploadStatistics {
         bundle: GameStatsBundle,
@@ -187,11 +205,19 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                 use IncomingMessage::*;
                 let result = match message {
                     Chat { sender, content } => {
-                        let incoming_chat = IncomingChat { channel: self.channel.clone(), sender, content };
+                        let incoming_chat = IncomingChat {
+                            channel: self.channel.clone(),
+                            sender,
+                            content,
+                        };
                         self.controller.do_send_async(incoming_chat).await
                     }
                     Status { games, players } => {
-                        let status_update = StatusUpdate { channel: self.channel.clone(), games, players };
+                        let status_update = StatusUpdate {
+                            channel: self.channel.clone(),
+                            games,
+                            players,
+                        };
                         self.controller.do_send_async(status_update).await
                     }
                     LifecycleStart {} => {
@@ -202,18 +228,25 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         self.controller.do_send_async(lifecycle).await
                     }
                     LifecycleStop { crash } => {
-                        let lifecycle = ServerLifecycleStop { channel: self.channel.clone(),
+                        let lifecycle = ServerLifecycleStop {
+                            channel: self.channel.clone(),
                             crash,
-                            server_type: self.server_type.clone()
+                            server_type: self.server_type.clone(),
                         };
                         self.controller.do_send_async(lifecycle).await
                     }
                     Performance(performance) => {
-                        let performance_update = PerformanceUpdate { channel: self.channel.clone(), performance };
+                        let performance_update = PerformanceUpdate {
+                            channel: self.channel.clone(),
+                            performance,
+                        };
                         self.controller.do_send_async(performance_update).await
                     }
-                    SystemMessage { content  } => {
-                        let system_message = ServerSystemMessage { channel: self.channel.clone(), content };
+                    SystemMessage { content } => {
+                        let system_message = ServerSystemMessage {
+                            channel: self.channel.clone(),
+                            content,
+                        };
                         self.controller.do_send_async(system_message).await
                     }
                     UploadStatistics { bundle, game_id } => {
@@ -232,7 +265,10 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                         self.controller.do_send_async(upload_bundle_message).await
                     }
                     _ => {
-                        warn!("received unexpected message from integrations client: {:?}", message);
+                        warn!(
+                            "received unexpected message from integrations client: {:?}",
+                            message
+                        );
                         Ok(())
                     }
                 };
@@ -260,7 +296,12 @@ impl Handler<OutgoingMessage> for IntegrationsClient {
     }
 }
 
-fn split_framed(stream: TcpStream) -> (impl Sink<OutgoingMessage, Error = Error> + Send, impl Stream<Item = HandleIncomingMessage>) {
+fn split_framed(
+    stream: TcpStream,
+) -> (
+    impl Sink<OutgoingMessage, Error = Error> + Send,
+    impl Stream<Item = HandleIncomingMessage>,
+) {
     let (sink, stream) = tokio_util::codec::LengthDelimitedCodec::builder()
         .big_endian()
         .max_frame_length(MAX_FRAME_LENGTH)

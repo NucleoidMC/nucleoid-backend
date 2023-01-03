@@ -26,14 +26,23 @@ pub struct Store {
 }
 
 impl Store {
-    fn add(&mut self, channel: ChannelId, role: RoleId, register_message: MessageId, webhook: Webhook) {
-        self.channels.0.insert(channel.0, Channel {
-            channel_id: channel.0,
-            role_id: role.0,
-            register_message: register_message.0,
-            registrations: Vec::new(),
-            webhook,
-        });
+    fn add(
+        &mut self,
+        channel: ChannelId,
+        role: RoleId,
+        register_message: MessageId,
+        webhook: Webhook,
+    ) {
+        self.channels.0.insert(
+            channel.0,
+            Channel {
+                channel_id: channel.0,
+                role_id: role.0,
+                register_message: register_message.0,
+                registrations: Vec::new(),
+                webhook,
+            },
+        );
     }
 
     fn try_ping(&mut self, config: &DiscordConfig) -> bool {
@@ -44,10 +53,10 @@ impl Store {
                 let interval = Duration::from_secs(config.lfp_ping_interval_minutes as u64 * 60);
                 match now.duration_since(last_ping_time) {
                     Ok(duration) if duration > interval => true,
-                    _ => false
+                    _ => false,
                 }
             }
-            None => true
+            None => true,
         };
 
         if can_ping {
@@ -71,7 +80,8 @@ impl Serialize for ChannelMap {
 
 impl<'de> Deserialize<'de> for ChannelMap {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let channels = Vec::<Channel>::deserialize(deserializer)?.into_iter()
+        let channels = Vec::<Channel>::deserialize(deserializer)?
+            .into_iter()
             .map(|channel| (channel.channel_id, channel))
             .collect();
         Ok(ChannelMap(channels))
@@ -115,31 +125,47 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub async fn setup_for_channel(&self, ctx: &SerenityContext, message: &SerenityMessage) -> CommandResult {
-        let role = message.mention_roles.iter().next().copied()
+    pub async fn setup_for_channel(
+        &self,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+    ) -> CommandResult {
+        let role = message
+            .mention_roles
+            .iter()
+            .next()
+            .copied()
             .ok_or(CommandError::MustMentionRole)?;
 
-        let description = self.parse_description(&message.content)
-            .unwrap_or(format!("Add a {} reaction to register as *looking for players*", REACTION));
+        let description = self.parse_description(&message.content).unwrap_or(format!(
+            "Add a {} reaction to register as *looking for players*",
+            REACTION
+        ));
 
-        let register_message = message.channel_id.send_message(&ctx.http, |message| {
-            message.content(description)
-                .reactions(vec![REACTION])
-        }).await?;
+        let register_message = message
+            .channel_id
+            .send_message(&ctx.http, |message| {
+                message.content(description).reactions(vec![REACTION])
+            })
+            .await?;
 
         let channel = match message.channel(ctx).await {
             Ok(SerenityChannel::Guild(channel)) => channel,
             _ => return Err(CommandError::CannotRunHere),
         };
 
-        let webhook = channel.create_webhook(&ctx.http, format!("Looking For Players")).await?;
+        let webhook = channel
+            .create_webhook(&ctx.http, format!("Looking For Players"))
+            .await?;
 
         let mut data = ctx.data.write().await;
         let store = data.get_mut::<StoreKey>().unwrap();
 
-        store.write(|store| {
-            store.add(message.channel_id, role, register_message.id, webhook);
-        }).await;
+        store
+            .write(|store| {
+                store.add(message.channel_id, role, register_message.id, webhook);
+            })
+            .await;
 
         Ok(())
     }
@@ -150,18 +176,29 @@ impl Handler {
 
     pub async fn handle_reaction_add(&self, ctx: &SerenityContext, reaction: Reaction) {
         if let Some(channel) = self.get_channel(ctx, reaction.channel_id).await {
-            let guild_channel = ctx.cache.channel(reaction.channel_id)
+            let guild_channel = ctx
+                .cache
+                .channel(reaction.channel_id)
                 .and_then(|c| c.guild());
 
             if let (Some(user), Some(guild_channel)) = (reaction.user_id, guild_channel) {
-                if let Err(err) = self.add_registration(ctx, user, guild_channel, channel).await {
+                if let Err(err) = self
+                    .add_registration(ctx, user, guild_channel, channel)
+                    .await
+                {
                     error!("Failed to add looking-for-player registration: {:?}", err);
                 }
             }
         }
     }
 
-    async fn add_registration(&self, ctx: &SerenityContext, user: UserId, channel: GuildChannel, channel_data: Channel) -> CommandResult {
+    async fn add_registration(
+        &self,
+        ctx: &SerenityContext,
+        user: UserId,
+        channel: GuildChannel,
+        channel_data: Channel,
+    ) -> CommandResult {
         let mut member = channel.guild_id.member(&ctx.http, user).await?;
         if member.user.bot {
             return Ok(());
@@ -172,28 +209,39 @@ impl Handler {
         let mut data = ctx.data.write().await;
         let store = data.get_mut::<StoreKey>().unwrap();
 
-        let pings = store.write(|store| {
-            store.try_ping(&self.config)
-        }).await;
+        let pings = store.write(|store| store.try_ping(&self.config)).await;
 
-        let message = channel_data.webhook.execute(&ctx.http, true, |message| {
-            let name = member.nick.clone().unwrap_or(member.user.name.clone());
-            let avatar = member.user.avatar_url().unwrap_or(member.user.default_avatar_url());
-            let content = if pings {
-                format!("{}: {} is looking for players!", RoleId(channel_data.role_id).mention(), member.mention())
-            } else {
-                format!("{} is looking for players!", member.mention())
-            };
-            message.content(content)
-                .username(name)
-                .avatar_url(avatar)
-        }).await?;
+        let message = channel_data
+            .webhook
+            .execute(&ctx.http, true, |message| {
+                let name = member.nick.clone().unwrap_or(member.user.name.clone());
+                let avatar = member
+                    .user
+                    .avatar_url()
+                    .unwrap_or(member.user.default_avatar_url());
+                let content = if pings {
+                    format!(
+                        "{}: {} is looking for players!",
+                        RoleId(channel_data.role_id).mention(),
+                        member.mention()
+                    )
+                } else {
+                    format!("{} is looking for players!", member.mention())
+                };
+                message.content(content).username(name).avatar_url(avatar)
+            })
+            .await?;
 
         if let Some(message) = message {
-            store.write(|store| {
-                store.channels.0.get_mut(&channel.id.0)
-                    .map(|channel| channel.add_registration(user, message.id))
-            }).await;
+            store
+                .write(|store| {
+                    store
+                        .channels
+                        .0
+                        .get_mut(&channel.id.0)
+                        .map(|channel| channel.add_registration(user, message.id))
+                })
+                .await;
         }
 
         Ok(())
@@ -201,18 +249,32 @@ impl Handler {
 
     pub async fn handle_reaction_remove(&self, ctx: &SerenityContext, reaction: Reaction) {
         if let Some(channel) = self.get_channel(ctx, reaction.channel_id).await {
-            let guild_channel = ctx.cache.channel(reaction.channel_id)
+            let guild_channel = ctx
+                .cache
+                .channel(reaction.channel_id)
                 .and_then(|c| c.guild());
 
             if let (Some(user), Some(guild_channel)) = (reaction.user_id, guild_channel) {
-                if let Err(err) = self.remove_registration(ctx, user, guild_channel, channel).await {
-                    error!("Failed to remove looking-for-player registration: {:?}", err);
+                if let Err(err) = self
+                    .remove_registration(ctx, user, guild_channel, channel)
+                    .await
+                {
+                    error!(
+                        "Failed to remove looking-for-player registration: {:?}",
+                        err
+                    );
                 }
             }
         }
     }
 
-    async fn remove_registration(&self, ctx: &SerenityContext, user: UserId, channel: GuildChannel, channel_data: Channel) -> CommandResult {
+    async fn remove_registration(
+        &self,
+        ctx: &SerenityContext,
+        user: UserId,
+        channel: GuildChannel,
+        channel_data: Channel,
+    ) -> CommandResult {
         let mut member = channel.guild_id.member(&ctx.http, user).await?;
         if member.user.bot {
             return Ok(());
@@ -223,13 +285,21 @@ impl Handler {
         let mut data = ctx.data.write().await;
         let store = data.get_mut::<StoreKey>().unwrap();
 
-        let registration = store.write(|store| {
-            store.channels.0.get_mut(&channel.id.0)
-                .and_then(|channel| channel.remove_registration(user))
-        }).await;
+        let registration = store
+            .write(|store| {
+                store
+                    .channels
+                    .0
+                    .get_mut(&channel.id.0)
+                    .and_then(|channel| channel.remove_registration(user))
+            })
+            .await;
 
         if let Some(registration) = registration {
-            channel.id.delete_message(&ctx.http, registration.message_id).await?;
+            channel
+                .id
+                .delete_message(&ctx.http, registration.message_id)
+                .await?;
         }
 
         Ok(())

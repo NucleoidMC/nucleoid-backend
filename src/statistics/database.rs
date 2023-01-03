@@ -3,16 +3,19 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use chrono::{Date, DateTime, Utc};
 use chrono_tz::Tz;
-use clickhouse_rs::{Block, Pool, row};
+use clickhouse_rs::{row, Block, Pool};
 use log::warn;
 use nucleoid_leaderboards::model::LeaderboardDefinition;
 use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler, Message};
 
-use crate::{Controller, StatisticsConfig};
-use crate::statistics::leaderboards::LeaderboardEntry;
 use crate::statistics::leaderboards::database::LeaderboardsDatabase;
-use crate::statistics::model::{Datapoint, DataQueryType, GameStatsBundle, initialise_database, PlayerStatsResponse, RecentGame, StatisticCounts, StatisticsStats};
+use crate::statistics::leaderboards::LeaderboardEntry;
+use crate::statistics::model::{
+    initialise_database, DataQueryType, Datapoint, GameStatsBundle, PlayerStatsResponse,
+    RecentGame, StatisticCounts, StatisticsStats,
+};
+use crate::{Controller, StatisticsConfig};
 
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
@@ -22,14 +25,20 @@ pub struct StatisticDatabaseController {
 }
 
 impl StatisticDatabaseController {
-    pub async fn connect(controller: &Address<Controller>, postgres_pool: deadpool_postgres::Pool, config: &StatisticsConfig, leaderboards: Vec<LeaderboardDefinition>) -> StatisticsDatabaseResult<Self> {
+    pub async fn connect(
+        controller: &Address<Controller>,
+        postgres_pool: deadpool_postgres::Pool,
+        config: &StatisticsConfig,
+        leaderboards: Vec<LeaderboardDefinition>,
+    ) -> StatisticsDatabaseResult<Self> {
         let pool = Pool::new(config.database_url.clone());
 
         let handler = Self {
             _controller: controller.clone(),
             pool: pool.clone(),
             _config: config.clone(),
-            leaderboards: LeaderboardsDatabase::new(postgres_pool.clone(), pool, leaderboards).await?,
+            leaderboards: LeaderboardsDatabase::new(postgres_pool.clone(), pool, leaderboards)
+                .await?,
         };
 
         initialise_database(&handler.pool).await?;
@@ -40,11 +49,18 @@ impl StatisticDatabaseController {
         Ok(handler)
     }
 
-    async fn get_player_stats(&self, player_id: &Uuid, namespace: &Option<String>) -> StatisticsDatabaseResult<Option<PlayerStatsResponse>> {
+    async fn get_player_stats(
+        &self,
+        player_id: &Uuid,
+        namespace: &Option<String>,
+    ) -> StatisticsDatabaseResult<Option<PlayerStatsResponse>> {
         let mut handle = self.pool.get_handle().await?;
 
         let cond = match namespace {
-            Some(namespace) => format!("player_id = '{}' AND namespace = '{}'", player_id, namespace),
+            Some(namespace) => format!(
+                "player_id = '{}' AND namespace = '{}'",
+                player_id, namespace
+            ),
             None => format!("player_id = '{}'", player_id),
         };
 
@@ -62,7 +78,9 @@ impl StatisticDatabaseController {
                 key
             ORDER BY
                 key ASC
-            "#, cond);
+            "#,
+            cond
+        );
 
         let block = handle.query(sql).fetch_all().await?;
 
@@ -84,11 +102,16 @@ impl StatisticDatabaseController {
         }
     }
 
-    async fn get_recent_games(&self, limit: u32, player_id: Option<Uuid>) -> StatisticsDatabaseResult<Vec<RecentGame>> {
+    async fn get_recent_games(
+        &self,
+        limit: u32,
+        player_id: Option<Uuid>,
+    ) -> StatisticsDatabaseResult<Vec<RecentGame>> {
         let mut handle = self.pool.get_handle().await?;
 
         let sql = match player_id {
-            Some(player_id) => format!(r#"
+            Some(player_id) => format!(
+                r#"
             SELECT
                 game_id,
                 namespace,
@@ -109,13 +132,18 @@ impl StatisticDatabaseController {
                 date_played
             ORDER BY date_played DESC
             LIMIT {}
-            "#, player_id, limit),
-            None => format!(r#"
+            "#,
+                player_id, limit
+            ),
+            None => format!(
+                r#"
                 SELECT *
                 FROM games
                 ORDER BY date_played DESC
                 LIMIT {}
-                "#, limit),
+                "#,
+                limit
+            ),
         };
 
         let games_res = handle.query(sql).fetch_all().await?;
@@ -133,16 +161,22 @@ impl StatisticDatabaseController {
             let server: String = row.get("server")?;
             let date_played: DateTime<Tz> = row.get("date_played")?;
 
-            let players_sql = format!(r#"
+            let players_sql = format!(
+                r#"
             SELECT player_id
             FROM player_statistics
             WHERE game_id = '{}'
             GROUP BY player_id
-            "#, game_id);
+            "#,
+                game_id
+            );
 
             let players_res = handle.query(players_sql).fetch_all().await?;
             let mut players = Vec::with_capacity(player_count as usize);
-            for player_id in players_res.rows().map(|row| row.get::<Uuid, _>("player_id")) {
+            for player_id in players_res
+                .rows()
+                .map(|row| row.get::<Uuid, _>("player_id"))
+            {
                 players.push(player_id?);
             }
 
@@ -158,7 +192,10 @@ impl StatisticDatabaseController {
         Ok(games)
     }
 
-    async fn get_game_stats(&self, game_id: &Uuid) -> StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>> {
+    async fn get_game_stats(
+        &self,
+        game_id: &Uuid,
+    ) -> StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>> {
         let mut handle = self.pool.get_handle().await?;
 
         let game_sql = format!("SELECT game_id FROM games WHERE game_id = '{}'", game_id);
@@ -170,14 +207,20 @@ impl StatisticDatabaseController {
         // This should be safe, as although a uuid is potentially-untrusted user input,
         // they are strictly formed and so no escape characters can be used to break out
         // of the sql string and manipulate the query.
-        let players_sql = format!(r#"
+        let players_sql = format!(
+            r#"
             SELECT player_id, namespace, key, value, type
                 FROM player_statistics
-                WHERE game_id = '{}'"#, game_id);
-        let global_sql = format!(r#"
+                WHERE game_id = '{}'"#,
+            game_id
+        );
+        let global_sql = format!(
+            r#"
             SELECT namespace, key, value, type
                 FROM global_statistics
-                WHERE game_id = '{}'"#, game_id);
+                WHERE game_id = '{}'"#,
+            game_id
+        );
 
         let players_res = handle.query(players_sql).fetch_all().await?;
         let global_res = handle.query(global_sql).fetch_all().await?;
@@ -225,7 +268,12 @@ impl StatisticDatabaseController {
         Ok(Some(players))
     }
 
-    async fn upload_stats_bundle(&self, game_id: Uuid, server: &String, bundle: GameStatsBundle) -> StatisticsDatabaseResult<Uuid> {
+    async fn upload_stats_bundle(
+        &self,
+        game_id: Uuid,
+        server: &String,
+        bundle: GameStatsBundle,
+    ) -> StatisticsDatabaseResult<Uuid> {
         let mut handle = self.pool.get_handle().await?;
 
         // Steps to insert a whole stats bundle
@@ -289,12 +337,20 @@ impl StatisticDatabaseController {
 
     async fn get_statistics_stats(&self) -> StatisticsDatabaseResult<StatisticsStats> {
         let mut handle = self.pool.get_handle().await?;
-        let player_results = handle.query(r#"
+        let player_results = handle
+            .query(
+                r#"
         SELECT COUNT(DISTINCT player_id) AS unique_players,
             COUNT(*) AS total_entries,
             SUM(value) AS grand_total
-        FROM player_statistics"#).fetch_all().await?;
-        let game_results = handle.query("SELECT COUNT(*) AS games_played FROM games").fetch_all().await?;
+        FROM player_statistics"#,
+            )
+            .fetch_all()
+            .await?;
+        let game_results = handle
+            .query("SELECT COUNT(*) AS games_played FROM games")
+            .fetch_all()
+            .await?;
         let global_results = handle.query("SELECT COUNT(*) AS total_entries, SUM(value) as grand_total FROM global_statistics").fetch_all().await?;
 
         let unique_players = player_results.get(0, "unique_players")?;
@@ -321,23 +377,30 @@ impl StatisticDatabaseController {
         })
     }
 
-    async fn data_query(&self, query_type: DataQueryType) -> StatisticsDatabaseResult<Vec<Datapoint>> {
+    async fn data_query(
+        &self,
+        query_type: DataQueryType,
+    ) -> StatisticsDatabaseResult<Vec<Datapoint>> {
         let mut handle = self.pool.get_handle().await?;
         let query = match query_type {
-            DataQueryType::GamesByDay => r#"
+            DataQueryType::GamesByDay => {
+                r#"
             SELECT
                 DATE(date_played) AS date,
                 COUNT(*) AS value
             FROM games
             GROUP BY date
-            "#,
-            DataQueryType::GamesByMonth => r#"
+            "#
+            }
+            DataQueryType::GamesByMonth => {
+                r#"
             SELECT
                 toStartOfMonth(DATE(date_played)) AS date,
                 COUNT(*) AS value
             FROM games
             GROUP BY date
-            "#,
+            "#
+            }
         };
 
         let result = handle.query(query).fetch_all().await?;
@@ -369,8 +432,13 @@ impl Message for GetPlayerStats {
 
 #[async_trait]
 impl Handler<GetPlayerStats> for StatisticDatabaseController {
-    async fn handle(&mut self, message: GetPlayerStats, _ctx: &mut Context<Self>) -> <GetPlayerStats as Message>::Result {
-        self.get_player_stats(&message.uuid, &message.namespace).await
+    async fn handle(
+        &mut self,
+        message: GetPlayerStats,
+        _ctx: &mut Context<Self>,
+    ) -> <GetPlayerStats as Message>::Result {
+        self.get_player_stats(&message.uuid, &message.namespace)
+            .await
     }
 }
 
@@ -382,7 +450,11 @@ impl Message for GetGameStats {
 
 #[async_trait]
 impl Handler<GetGameStats> for StatisticDatabaseController {
-    async fn handle(&mut self, message: GetGameStats, _ctx: &mut Context<Self>) -> <GetGameStats as Message>::Result {
+    async fn handle(
+        &mut self,
+        message: GetGameStats,
+        _ctx: &mut Context<Self>,
+    ) -> <GetGameStats as Message>::Result {
         self.get_game_stats(&message.0).await
     }
 }
@@ -398,8 +470,13 @@ impl Message for GetRecentGames {
 
 #[async_trait]
 impl Handler<GetRecentGames> for StatisticDatabaseController {
-    async fn handle(&mut self, message: GetRecentGames, _ctx: &mut Context<Self>) -> <GetRecentGames as Message>::Result {
-        self.get_recent_games(message.limit, message.player_id).await
+    async fn handle(
+        &mut self,
+        message: GetRecentGames,
+        _ctx: &mut Context<Self>,
+    ) -> <GetRecentGames as Message>::Result {
+        self.get_recent_games(message.limit, message.player_id)
+            .await
     }
 }
 
@@ -416,10 +493,19 @@ impl Message for UploadStatsBundle {
 
 #[async_trait]
 impl Handler<UploadStatsBundle> for StatisticDatabaseController {
-    async fn handle(&mut self, message: UploadStatsBundle, _ctx: &mut Context<Self>) -> <UploadStatsBundle as Message>::Result {
-        if let Err(e) = self.upload_stats_bundle(
-            message.game_id, &message.server.clone(), message.bundle.clone()
-        ).await {
+    async fn handle(
+        &mut self,
+        message: UploadStatsBundle,
+        _ctx: &mut Context<Self>,
+    ) -> <UploadStatsBundle as Message>::Result {
+        if let Err(e) = self
+            .upload_stats_bundle(
+                message.game_id,
+                &message.server.clone(),
+                message.bundle.clone(),
+            )
+            .await
+        {
             warn!("Failed to upload stats bundle {:?}: {}", message, e);
         }
     }
@@ -433,7 +519,11 @@ impl Message for GetStatisticsStats {
 
 #[async_trait]
 impl Handler<GetStatisticsStats> for StatisticDatabaseController {
-    async fn handle(&mut self, _message: GetStatisticsStats, _ctx: &mut Context<Self>) -> <GetStatisticsStats as Message>::Result {
+    async fn handle(
+        &mut self,
+        _message: GetStatisticsStats,
+        _ctx: &mut Context<Self>,
+    ) -> <GetStatisticsStats as Message>::Result {
         self.get_statistics_stats().await
     }
 }
@@ -446,7 +536,11 @@ impl Message for GetLeaderboard {
 
 #[async_trait]
 impl Handler<GetLeaderboard> for StatisticDatabaseController {
-    async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> <GetLeaderboard as Message>::Result {
+    async fn handle(
+        &mut self,
+        message: GetLeaderboard,
+        _ctx: &mut Context<Self>,
+    ) -> <GetLeaderboard as Message>::Result {
         self.leaderboards.get_leaderboard(&message.0).await
     }
 }
@@ -459,7 +553,11 @@ impl Message for GetAllLeaderboards {
 
 #[async_trait]
 impl Handler<GetAllLeaderboards> for StatisticDatabaseController {
-    async fn handle(&mut self, _message: GetAllLeaderboards, _ctx: &mut Context<Self>) -> <GetAllLeaderboards as Message>::Result {
+    async fn handle(
+        &mut self,
+        _message: GetAllLeaderboards,
+        _ctx: &mut Context<Self>,
+    ) -> <GetAllLeaderboards as Message>::Result {
         self.leaderboards.list_all_leaderboards()
     }
 }
@@ -472,7 +570,11 @@ impl Message for GetPlayerRankings {
 
 #[async_trait]
 impl Handler<GetPlayerRankings> for StatisticDatabaseController {
-    async fn handle(&mut self, message: GetPlayerRankings, _ctx: &mut Context<Self>) -> <GetPlayerRankings as Message>::Result {
+    async fn handle(
+        &mut self,
+        message: GetPlayerRankings,
+        _ctx: &mut Context<Self>,
+    ) -> <GetPlayerRankings as Message>::Result {
         self.leaderboards.get_player_rankings(&message.0).await
     }
 }
@@ -485,7 +587,11 @@ impl Message for DataQuery {
 
 #[async_trait]
 impl Handler<DataQuery> for StatisticDatabaseController {
-    async fn handle(&mut self, message: DataQuery, _ctx: &mut Context<Self>) -> <DataQuery as Message>::Result {
+    async fn handle(
+        &mut self,
+        message: DataQuery,
+        _ctx: &mut Context<Self>,
+    ) -> <DataQuery as Message>::Result {
         self.data_query(message.0).await
     }
 }
