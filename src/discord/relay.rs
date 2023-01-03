@@ -250,6 +250,32 @@ impl Handler {
         }
     }
 
+    pub async fn send_relay_command(&self, ctx: &SerenityContext, message: &SerenityMessage, channel: &str, command: &[&str]) -> CommandResult {
+        let sender = self.sender_name(ctx, message).await;
+        let roles = if let Ok(member) = message.member(&ctx).await {
+            member.roles.iter().map(ToString::to_string).collect()
+        } else {
+            Vec::new()
+        };
+
+        let success = self.controller
+            .send(OutgoingCommand {
+                channel: channel.to_string(),
+                command: command.join(" "),
+                sender,
+                roles,
+                silent: true,
+            })
+            .await
+            .expect("controller disconnected");
+
+        if success {
+            Ok(())
+        } else {
+            Err(CommandError::ChannelDoesNotExist)
+        }
+    }
+
     pub async fn send_outgoing_command(&self, ctx: &SerenityContext, message: &SerenityMessage) {
         let data = ctx.data.read().await;
 
@@ -269,6 +295,7 @@ impl Handler {
                     command,
                     sender,
                     roles,
+                    silent: false,
                 })
                 .await
                 .expect("controller disconnected");

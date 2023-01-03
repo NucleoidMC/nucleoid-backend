@@ -174,6 +174,7 @@ pub enum OutgoingMessage {
         command: String,
         sender: String,
         roles: Vec<String>,
+        silent: bool,
     },
     #[serde(rename = "send_to_server")]
     SendToServer {

@@ -250,6 +250,7 @@ impl DiscordHandler {
                 self.relay.connect(channel, ctx, message).await
             }
             ["relay", "disconnect"] if admin => self.relay.disconnect(ctx, message).await,
+            ["relay", "command", channel, command @ ..] if admin => self.relay.send_relay_command(ctx, message, channel, command).await,
             ["ping", "add", ping, role] if admin => self.pings.add(ctx, message, ping, role).await,
             ["ping", "remove", ping] if admin => self.pings.remove(ctx, message, ping).await,
             ["ping", "allow", ping, role] if admin => {
@@ -335,4 +336,6 @@ pub enum CommandError {
     NotAllowed,
     #[error("You must mention a role with this command!")]
     MustMentionRole,
+    #[error("The channel with that name does not exist!")]
+    ChannelDoesNotExist,
 }

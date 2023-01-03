@@ -115,10 +115,11 @@ pub struct OutgoingCommand {
     pub sender: String,
     pub command: String,
     pub roles: Vec<String>,
+    pub silent: bool,
 }
 
 impl Message for OutgoingCommand {
-    type Result = ();
+    type Result = bool;
 }
 
 pub struct OutgoingServerChange {
@@ -298,7 +299,7 @@ impl Handler<OutgoingChat> for Controller {
 
 #[async_trait]
 impl Handler<OutgoingCommand> for Controller {
-    async fn handle(&mut self, message: OutgoingCommand, _ctx: &mut Context<Self>) {
+    async fn handle(&mut self, message: OutgoingCommand, _ctx: &mut Context<Self>) -> <OutgoingCommand as Message>::Result {
         println!(
             "[{}] <@{}> /{}",
             message.channel, message.sender, message.command
@@ -310,8 +311,12 @@ impl Handler<OutgoingCommand> for Controller {
                     command: message.command,
                     sender: message.sender,
                     roles: message.roles,
+                    silent: message.silent,
                 })
                 .await;
+            true
+        } else {
+            false
         }
     }
 }
