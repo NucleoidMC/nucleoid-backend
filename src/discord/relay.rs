@@ -89,7 +89,7 @@ pub async fn send_chat(discord: &mut DiscordClient, send_chat: SendChat) {
                     webhook.0.insert("allowed_mentions", json!({"parse": []}));
 
                     if let Some(avatar_url) = avatar_url {
-                        let id = send_chat.sender.id.replace("-", "");
+                        let id = send_chat.sender.id.replace('-', "");
                         let avatar_url = format!("{}/{}", avatar_url, id);
                         webhook = webhook.avatar_url(avatar_url);
                     }
@@ -283,7 +283,7 @@ impl Handler {
         let mut chat = self.parse_outgoing_chat(ctx, message).await;
 
         if let Some(replying_to) = &message.referenced_message {
-            let replying_to = self.parse_outgoing_chat(ctx, &*replying_to).await;
+            let replying_to = self.parse_outgoing_chat(ctx, replying_to).await;
             chat.replying_to = Some(Box::new(replying_to));
         }
 
@@ -329,7 +329,7 @@ impl Handler {
         message
             .author_nick(&ctx)
             .await
-            .unwrap_or(message.author.name.clone())
+            .unwrap_or_else(|| message.author.name.clone())
     }
 
     async fn sanitize_message_content(

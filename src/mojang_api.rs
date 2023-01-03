@@ -35,7 +35,7 @@ impl MojangApiClient {
             let mut interval = tokio::time::interval(CACHE_CLEAR_INTERVAL);
             loop {
                 interval.tick().await;
-                if let Err(_) = client_weak.send(ClearCache).await {
+                if client_weak.send(ClearCache).await.is_err() {
                     break;
                 }
             }
@@ -59,7 +59,7 @@ impl MojangApiClient {
             } else {
                 let profile = response.json::<ProfileResponse>().await?;
                 let username = profile.name;
-                self.username_cache.put(uuid.clone(), username.clone());
+                self.username_cache.put(*uuid, username.clone());
                 Ok(Some(username))
             }
         }

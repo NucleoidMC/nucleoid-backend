@@ -199,7 +199,7 @@ impl Handler<ReportError> for DiscordClient {
         {
             if let Ok(webhook) = &cache_and_http
                 .http
-                .get_webhook_with_token(webhook_config.id, &*webhook_config.token)
+                .get_webhook_with_token(webhook_config.id, &webhook_config.token)
                 .await
             {
                 let embed = Embed::fake(|e| {
@@ -243,7 +243,7 @@ impl DiscordHandler {
         ctx: &SerenityContext,
         message: &SerenityMessage,
     ) {
-        let admin = check_message_admin(&ctx, &message).await;
+        let admin = check_message_admin(ctx, message).await;
 
         let result = match tokens {
             ["relay", "connect", channel] if admin => {
@@ -279,12 +279,10 @@ impl EventHandler for DiscordHandler {
             if let Ok(true) = message.mentions_me(&ctx).await {
                 let tokens: Vec<&str> = message.content.split_ascii_whitespace().collect();
                 self.handle_command(&tokens[1..], &ctx, &message).await;
+            } else if message.content.starts_with("//") {
+                self.relay.send_outgoing_command(&ctx, &message).await;
             } else {
-                if message.content.starts_with("//") {
-                    self.relay.send_outgoing_command(&ctx, &message).await;
-                } else {
-                    self.relay.send_outgoing_chat(&ctx, &message).await;
-                }
+                self.relay.send_outgoing_chat(&ctx, &message).await;
             }
         }
     }
@@ -304,7 +302,7 @@ impl EventHandler for DiscordHandler {
 
 async fn check_message_admin(ctx: &SerenityContext, message: &SerenityMessage) -> bool {
     if let Ok(member) = message.member(&ctx).await {
-        if let Ok(permissions) = member.permissions(&ctx) {
+        if let Ok(permissions) = member.permissions(ctx) {
             return permissions.administrator();
         }
     }

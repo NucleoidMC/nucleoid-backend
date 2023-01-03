@@ -51,10 +51,7 @@ impl Store {
         let can_ping = match self.last_ping_time {
             Some(last_ping_time) => {
                 let interval = Duration::from_secs(config.lfp_ping_interval_minutes as u64 * 60);
-                match now.duration_since(last_ping_time) {
-                    Ok(duration) if duration > interval => true,
-                    _ => false,
-                }
+                matches!(now.duration_since(last_ping_time), Ok(duration) if duration > interval)
             }
             None => true,
         };
@@ -132,8 +129,7 @@ impl Handler {
     ) -> CommandResult {
         let role = message
             .mention_roles
-            .iter()
-            .next()
+            .first()
             .copied()
             .ok_or(CommandError::MustMentionRole)?;
 
@@ -155,7 +151,7 @@ impl Handler {
         };
 
         let webhook = channel
-            .create_webhook(&ctx.http, format!("Looking For Players"))
+            .create_webhook(&ctx.http, "Looking For Players".to_string())
             .await?;
 
         let mut data = ctx.data.write().await;
@@ -171,7 +167,7 @@ impl Handler {
     }
 
     fn parse_description(&self, message: &str) -> Option<String> {
-        message.find("\n").map(|idx| message[idx..].to_owned())
+        message.find('\n').map(|idx| message[idx..].to_owned())
     }
 
     pub async fn handle_reaction_add(&self, ctx: &SerenityContext, reaction: Reaction) {
@@ -214,11 +210,14 @@ impl Handler {
         let message = channel_data
             .webhook
             .execute(&ctx.http, true, |message| {
-                let name = member.nick.clone().unwrap_or(member.user.name.clone());
+                let name = member
+                    .nick
+                    .clone()
+                    .unwrap_or_else(|| member.user.name.clone());
                 let avatar = member
                     .user
                     .avatar_url()
-                    .unwrap_or(member.user.default_avatar_url());
+                    .unwrap_or_else(|| member.user.default_avatar_url());
                 let content = if pings {
                     format!(
                         "{}: {} is looking for players!",

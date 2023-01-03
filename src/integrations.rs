@@ -6,7 +6,7 @@ use bytes::Bytes;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use serde_json;
+
 use tokio::net::{TcpListener, TcpStream};
 use xtra::prelude::*;
 use xtra::KeepRunning;
@@ -108,7 +108,8 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
         .await
         .expect("controller disconnected");
 
-    Ok(client.attach_stream(stream).await)
+    client.attach_stream(stream).await;
+    Ok(())
 }
 
 pub struct IntegrationsClient {
