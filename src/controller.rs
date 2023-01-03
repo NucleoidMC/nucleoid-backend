@@ -204,7 +204,7 @@ impl Handler<RegisterIntegrationsClient> for Controller {
         let status = self
             .status_by_channel
             .entry(message.channel)
-            .or_insert_with(|| ServerStatus::default());
+            .or_insert_with(ServerStatus::default);
         status.game_version = message.game_version;
         status.server_ip = message.server_ip;
     }
@@ -344,7 +344,7 @@ impl Handler<StatusUpdate> for Controller {
         let status = self
             .status_by_channel
             .entry(message.channel.clone())
-            .or_insert_with(|| ServerStatus::default());
+            .or_insert_with(ServerStatus::default);
 
         if let Some(games) = message.games {
             status.games = games;

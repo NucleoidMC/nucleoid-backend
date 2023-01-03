@@ -214,7 +214,7 @@ impl ChannelDatabase {
         performance: ServerPerformance,
     ) -> Result<()> {
         let client = pool.get().await?;
-        let average_tick_ms = performance.average_tick_ms as f32;
+        let average_tick_ms = performance.average_tick_ms;
         let tps = performance.tps as i16;
         let dimensions = performance.dimensions as i16;
         let entities = performance.entities as i32;

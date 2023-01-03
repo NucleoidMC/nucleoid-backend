@@ -146,17 +146,16 @@ impl Handler {
                 ping_store
                     .write(|ping_store| {
                         let ping = ping.to_owned();
-                        if !ping_store.pings.contains_key(&ping) {
-                            ping_store.pings.insert(
-                                ping,
-                                Ping {
-                                    discord_channel: channel.id.0,
-                                    discord_role: role_id.0,
-                                    webhook,
-                                    last_ping_time: SystemTime::now(),
-                                    allowed_roles: HashSet::new(),
-                                },
-                            );
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            ping_store.pings.entry(ping)
+                        {
+                            e.insert(Ping {
+                                discord_channel: channel.id.0,
+                                discord_role: role_id.0,
+                                webhook,
+                                last_ping_time: SystemTime::now(),
+                                allowed_roles: HashSet::new(),
+                            });
                             Ok(())
                         } else {
                             Err(CommandError::PingAlreadyConnected)

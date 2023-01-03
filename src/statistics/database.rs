@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use chrono::{Date, DateTime, Utc};
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{row, Block, Pool};
 use log::warn;
@@ -237,10 +237,7 @@ impl StatisticDatabaseController {
             let key: String = row.get("key")?;
             let value: f64 = row.get("value")?;
             // let stat_type: String = row.get("type")?;
-            if !players.contains_key(&player_id) {
-                players.insert(player_id, HashMap::new());
-            }
-            let player_stats = players.get_mut(&player_id).unwrap();
+            let player_stats = players.entry(player_id).or_insert_with(HashMap::new);
             if !player_stats.contains_key(&namespace) {
                 player_stats.insert(namespace.clone(), HashMap::new());
             }
@@ -254,10 +251,7 @@ impl StatisticDatabaseController {
             let key: String = row.get("key")?;
             let value: f64 = row.get("value")?;
             // let stat_type: String = row.get("type")?;
-            if !players.contains_key(&global_player_id) {
-                players.insert(global_player_id, HashMap::new());
-            }
-            let player_stats = players.get_mut(&global_player_id).unwrap();
+            let player_stats = players.entry(global_player_id).or_insert_with(HashMap::new);
             if !player_stats.contains_key(&namespace) {
                 player_stats.insert(namespace.clone(), HashMap::new());
             }
@@ -271,7 +265,7 @@ impl StatisticDatabaseController {
     async fn upload_stats_bundle(
         &self,
         game_id: Uuid,
-        server: &String,
+        server: &str,
         bundle: GameStatsBundle,
     ) -> StatisticsDatabaseResult<Uuid> {
         let mut handle = self.pool.get_handle().await?;
@@ -286,7 +280,7 @@ impl StatisticDatabaseController {
                 game_id: game_id,
                 namespace: bundle.namespace.clone(),
                 player_count: bundle.stats.players.len() as u32,
-                server: server.clone(),
+                server: server,
                 date_played: date_played,
             })?;
 
@@ -407,12 +401,9 @@ impl StatisticDatabaseController {
         let rows = result.rows();
         let mut data = Vec::new();
         for row in rows {
-            let date: Date<Tz> = row.get("date")?;
+            let date: DateTime<Tz> = row.get("date")?;
             let value: u64 = row.get("value")?;
-            data.push(Datapoint {
-                date: date.and_hms(0, 0, 0),
-                value,
-            });
+            data.push(Datapoint { date, value });
         }
 
         Ok(data)
@@ -599,13 +590,13 @@ impl Handler<DataQuery> for StatisticDatabaseController {
 #[derive(thiserror::Error, Debug)]
 pub enum StatisticsDatabaseError {
     #[error("a database error occurred: {0}")]
-    ClickHouseError(#[from] clickhouse_rs::errors::Error),
+    ClickHouse(#[from] clickhouse_rs::errors::Error),
     #[error("a database error occurred: {0}")]
-    PostgresError(#[from] tokio_postgres::Error),
+    Postgres(#[from] tokio_postgres::Error),
     #[error("a database pool error occurred: {0}")]
-    PoolError(#[from] deadpool_postgres::PoolError),
+    Pool(#[from] deadpool_postgres::PoolError),
     #[error("unknown error")]
-    UnknownError,
+    Unknown,
 }
 
 pub type StatisticsDatabaseResult<T> = Result<T, StatisticsDatabaseError>;

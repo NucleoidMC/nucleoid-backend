@@ -68,7 +68,7 @@ async fn main() {
             futures.push(tokio::spawn(statistics::run(
                 controller.clone(),
                 statistics,
-                postgres_pool.clone(),
+                postgres_pool,
             )));
         }
     }
@@ -82,9 +82,9 @@ async fn setup_postgres(config: DatabaseConfig) -> Pool {
     db_config.port = Some(config.port);
     db_config.user = Some(config.user.clone());
     db_config.password = Some(config.password.clone());
-    db_config.dbname = Some(config.database.clone());
-    let pool = db_config
+    db_config.dbname = Some(config.database);
+
+    db_config
         .create_pool(Some(Runtime::Tokio1), NoTls)
-        .expect("failed to create database pool");
-    pool
+        .expect("failed to create database pool")
 }

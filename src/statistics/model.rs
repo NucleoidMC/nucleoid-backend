@@ -104,10 +104,10 @@ impl UploadStat {
     }
 }
 
-impl Into<f64> for UploadStat {
-    fn into(self) -> f64 {
+impl From<UploadStat> for f64 {
+    fn from(val: UploadStat) -> Self {
         // I hate this but until anyone else has a better idea then this will stay
-        match self {
+        match val {
             UploadStat::FloatTotal(v)
             | UploadStat::FloatMin(v)
             | UploadStat::FloatMax(v)

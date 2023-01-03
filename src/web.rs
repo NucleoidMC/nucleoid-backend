@@ -159,9 +159,9 @@ async fn get_player_stats(
 
     if let Some(namespace) = &namespace {
         for c in namespace.chars() {
-            if !((c >= 'a' && c <= 'z')
-                || (c >= 'A' && c <= 'Z')
-                || (c >= '0' && c <= '9')
+            if !(('a'..='z').contains(&c)
+                || ('A'..='Z').contains(&c)
+                || ('0'..='9').contains(&c)
                 || c == '_')
             {
                 return Ok(send_http_status(StatusCode::BAD_REQUEST));
