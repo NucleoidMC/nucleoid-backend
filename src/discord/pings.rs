@@ -110,8 +110,8 @@ impl Handler {
         let mut data = ctx.data.write().await;
         let ping_store = data.get_mut::<StoreKey>().unwrap();
 
-        match (message.guild(&ctx.cache).await, message.channel(&ctx.cache).await) {
-            (Some(guild), Some(Channel::Guild(channel))) => {
+        match (message.guild(&ctx.cache), message.channel(ctx).await) {
+            (Some(guild), Ok(Channel::Guild(channel))) => {
                 let role_id = RoleId(role_id.parse::<u64>().map_err(|_| CommandError::InvalidRoleId)?);
                 if !guild.roles.contains_key(&role_id) {
                     return Err(CommandError::InvalidRoleId);
@@ -155,7 +155,8 @@ impl Handler {
         }).await?;
 
         let webhook = ping.webhook;
-        ctx.http.delete_webhook_with_token(webhook.id.0, &webhook.token).await?;
+        // the unwrap of the token shouldn't fail as we should always receieve it when creating the webhook
+        ctx.http.delete_webhook_with_token(webhook.id.0, &webhook.token.unwrap()).await?;
 
         Ok(())
     }
@@ -163,7 +164,7 @@ impl Handler {
     pub async fn allow_for_role(&self, ctx: &SerenityContext, message: &SerenityMessage, ping: &str, role: &str) -> CommandResult {
         let role = role.parse::<u64>().map_err(|_| CommandError::InvalidRoleId)?;
 
-        let guild = message.guild(&ctx.cache).await.ok_or(CommandError::CannotRunHere)?;
+        let guild = message.guild(&ctx.cache).ok_or(CommandError::CannotRunHere)?;
         if guild.roles.get(&RoleId(role)).is_none() {
             return Err(CommandError::InvalidRoleId);
         }

@@ -127,8 +127,8 @@ impl Handler {
                 .reactions(vec![REACTION])
         }).await?;
 
-        let channel = match message.channel(&ctx.cache).await {
-            Some(SerenityChannel::Guild(channel)) => channel,
+        let channel = match message.channel(ctx).await {
+            Ok(SerenityChannel::Guild(channel)) => channel,
             _ => return Err(CommandError::CannotRunHere),
         };
 
@@ -150,7 +150,7 @@ impl Handler {
 
     pub async fn handle_reaction_add(&self, ctx: &SerenityContext, reaction: Reaction) {
         if let Some(channel) = self.get_channel(ctx, reaction.channel_id).await {
-            let guild_channel = ctx.cache.channel(reaction.channel_id).await
+            let guild_channel = ctx.cache.channel(reaction.channel_id)
                 .and_then(|c| c.guild());
 
             if let (Some(user), Some(guild_channel)) = (reaction.user_id, guild_channel) {
@@ -201,7 +201,7 @@ impl Handler {
 
     pub async fn handle_reaction_remove(&self, ctx: &SerenityContext, reaction: Reaction) {
         if let Some(channel) = self.get_channel(ctx, reaction.channel_id).await {
-            let guild_channel = ctx.cache.channel(reaction.channel_id).await
+            let guild_channel = ctx.cache.channel(reaction.channel_id)
                 .and_then(|c| c.guild());
 
             if let (Some(user), Some(guild_channel)) = (reaction.user_id, guild_channel) {

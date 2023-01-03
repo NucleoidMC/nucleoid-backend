@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use log::{error, info, warn};
 use serde_json::json;
 use serenity::CacheAndHttp;
-use serenity::client::bridge::gateway::GatewayIntents;
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Embed, Message as SerenityMessage, Reaction};
 use serenity::prelude::*;
@@ -64,9 +63,10 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         },
     };
 
-    let mut client = Client::builder(config.token)
+    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGE_REACTIONS;
+
+    let mut client = Client::builder(config.token, intents)
         .event_handler(handler)
-        .intents(GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGE_REACTIONS)
         .await
         .expect("failed to create client");
 
@@ -277,7 +277,7 @@ impl EventHandler for DiscordHandler {
 
 async fn check_message_admin(ctx: &SerenityContext, message: &SerenityMessage) -> bool {
     if let Ok(member) = message.member(&ctx).await {
-        if let Ok(permissions) = member.permissions(&ctx).await {
+        if let Ok(permissions) = member.permissions(&ctx) {
             return permissions.administrator();
         }
     }
