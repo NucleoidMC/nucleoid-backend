@@ -7,3 +7,7 @@ relay.json
 
 clickhouse_data/
 postgres_data/
+
+# nix flake
+/.direnv
+/result
