@@ -16,13 +16,17 @@
         };
         inherit (pkgs) lib;
 
-        craneLib = crane.lib.${system};
+        rust-toolchain = pkgs.rust-bin.stable.latest.default;
+        rust-dev-toolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [ "rust-src" "rust-analyzer" ];
+        };
+
+        craneLib = (crane.mkLib pkgs).overrideToolchain rust-toolchain;
 
         src = craneLib.cleanCargoSource ./.;
 
         buildInputs = [
           pkgs.bintools
-          rust-toolchain
         ] ++ lib.optionals pkgs.stdenv.isDarwin [
           # Additional darwin specific inputs can be set here
           pkgs.libiconv
@@ -36,11 +40,6 @@
         # artifacts from above.
         nucleoid-backend = craneLib.buildPackage {
           inherit cargoArtifacts src buildInputs;
-        };
-
-        rust-toolchain = pkgs.rust-bin.stable.latest.default;
-        rust-dev-toolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
         };
       in
     {
