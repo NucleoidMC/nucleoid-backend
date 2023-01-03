@@ -22,7 +22,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: target/**
-          key: ${{ runner.os }}-cargo
+          key: ${{ matrix.os }}-cargo
       - name: Install rust toolchain
         uses: actions-rs/toolchain@v1
         with:
