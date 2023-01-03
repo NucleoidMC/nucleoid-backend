@@ -32,8 +32,7 @@ jobs:
         with:
           command: build
           args: --release
-      - name: Upload artifacts (Linux only)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
           name: nucleoid-backend
