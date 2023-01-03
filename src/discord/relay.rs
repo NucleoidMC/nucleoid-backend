@@ -129,7 +129,7 @@ pub async fn update_status(discord: &mut DiscordClient, update_relay: UpdateRela
                 None => format!("{} | {} players online", update_relay.game_version, update_relay.player_count)
             };
 
-            if let Some(Channel::Guild(channel)) = cache_and_http.cache.channel(relay.discord_channel).await {
+            if let Some(Channel::Guild(channel)) = cache_and_http.cache.channel(relay.discord_channel) {
                 if channel.topic.as_ref() == Some(&topic) {
                     return;
                 }
@@ -161,8 +161,8 @@ impl Handler {
             return Err(CommandError::ChannelAlreadyConnected);
         }
 
-        match message.channel(&ctx.cache).await {
-            Some(Channel::Guild(guild_channel)) => {
+        match message.channel(ctx).await {
+            Ok(Channel::Guild(guild_channel)) => {
                 let webhook = guild_channel.create_webhook(&ctx.http, format!("Relay ({})", channel)).await?;
 
                 let relay = ChannelRelay {
@@ -192,7 +192,8 @@ impl Handler {
             }
         }).await?;
 
-        ctx.http.delete_webhook_with_token(relay.webhook.id.0, &relay.webhook.token).await?;
+        // the unwrap of the token shouldn't fail as we should always receieve it when creating the webhook
+        ctx.http.delete_webhook_with_token(relay.webhook.id.0, &relay.webhook.token.unwrap()).await?;
 
         Ok(())
     }
@@ -275,7 +276,7 @@ impl Handler {
             static ref CUSTOM_EMOJI_PATTERN: Regex = Regex::new(r#"<:([^>]*>)"#).unwrap();
         }
 
-        let mut content = message.content_safe(&ctx.cache).await;
+        let mut content = message.content_safe(&ctx.cache);
 
         let mut index = 0;
         while let Some(emoji) = CUSTOM_EMOJI_PATTERN.find_at(&content, index) {
@@ -292,7 +293,7 @@ impl Handler {
 
     async fn get_sender_name_color(&self, ctx: &SerenityContext, message: &SerenityMessage) -> Option<u32> {
         if let (Some(member), Some(guild)) = (&message.member, message.guild_id) {
-            if let Some(guild) = ctx.cache.guild(guild).await {
+            if let Some(guild) = ctx.cache.guild(guild) {
                 return member.roles.iter()
                     .filter_map(|id| guild.roles.get(id))
                     .filter(|role| role.colour.0 != 0)

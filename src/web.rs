@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::num::NonZeroUsize;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warp::Filter;
@@ -15,7 +16,7 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
     let cors = warp::cors()
         .allow_any_origin();
 
-    let mojang_client = MojangApiClient::start(512)
+    let mojang_client = MojangApiClient::start(NonZeroUsize::new(512).unwrap())
         .expect("failed to create Mojang API client");
 
     let status = warp::path("status")

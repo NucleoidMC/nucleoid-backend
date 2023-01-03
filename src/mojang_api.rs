@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{time::Duration, num::NonZeroUsize};
 
 use lru::LruCache;
 use reqwest::Client;
@@ -20,7 +20,7 @@ pub struct MojangApiClient {
 impl Actor for MojangApiClient { }
 
 impl MojangApiClient {
-    pub fn start(cache_size: usize) -> Result<Address<Self>, ClientError> {
+    pub fn start(cache_size: NonZeroUsize) -> Result<Address<Self>, ClientError> {
         let username_cache = LruCache::new(cache_size);
         let client = Self {
             client: Client::builder()
