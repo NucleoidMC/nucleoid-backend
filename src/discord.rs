@@ -64,6 +64,7 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
     };
 
     let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MESSAGE_REACTIONS;
 
