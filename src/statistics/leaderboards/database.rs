@@ -1,6 +1,7 @@
 use clickhouse_rs::Pool;
 use futures::StreamExt;
-use nucleoid_leaderboards::model::LeaderboardDefinition;
+use nucleoid_leaderboards::model::{LeaderboardDefinition, LeaderboardQuery, ValueFormat};
+use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -23,6 +24,12 @@ pub async fn setup_leaderboard_tables(
     client.execute(CREATE_LEADERBOARDS_TABLE, &[]).await?;
 
     Ok(())
+}
+
+#[derive(Serialize)]
+pub struct LeaderboardMetadata {
+    pub id: String,
+    pub value_format: ValueFormat,
 }
 
 pub struct LeaderboardsDatabase {
@@ -119,6 +126,23 @@ impl LeaderboardsDatabase {
         } else {
             Some(leaderboard)
         })
+    }
+
+    pub async fn get_leaderboard_metadata(
+        &self,
+        id: &str,
+    ) -> StatisticsDatabaseResult<Option<LeaderboardMetadata>> {
+        let metadata = self.generator.definitions.get(id).map(|(definition, _sql)| {
+            let value_format = match definition.query {
+                LeaderboardQuery::Sql { value_format, .. } => value_format,
+                LeaderboardQuery::Statistic { value_format, .. } => value_format,
+            };
+            LeaderboardMetadata {
+                id: id.to_owned(),
+                value_format,
+            }
+        });
+        Ok(metadata)
     }
 
     pub async fn get_player_rankings(

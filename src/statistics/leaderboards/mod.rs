@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use futures::{Stream, StreamExt};
 use nucleoid_leaderboards::model::{
-    Aggregate, LeaderboardDefinition, LeaderboardQuery, Ranking, UnitConversion, ValueType,
+    Aggregate, LeaderboardDefinition, LeaderboardQuery, Ranking, ValueType, ValueFormat,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -86,6 +86,7 @@ fn build_sql(definition: &LeaderboardDefinition) -> LeaderboardSql {
             player,
             value,
             value_type,
+            ..
         } => LeaderboardSql {
             sql: query.clone(),
             player: player.clone(),
@@ -97,7 +98,7 @@ fn build_sql(definition: &LeaderboardDefinition) -> LeaderboardSql {
             key,
             aggregate,
             ranking,
-            convert,
+            value_format,
         } => LeaderboardSql {
             // TODO: Sanitize SQL here?
             sql: format!(
@@ -116,7 +117,7 @@ fn build_sql(definition: &LeaderboardDefinition) -> LeaderboardSql {
                 namespace = namespace,
                 key = key,
                 aggregate = aggregate_sql(aggregate),
-                convert = convert_sql(convert),
+                convert = convert_sql(value_format),
                 ranking = ranking_sql(ranking),
             ),
             player: "player_id".to_string(),
@@ -135,10 +136,10 @@ fn aggregate_sql(aggregate: &Aggregate) -> &'static str {
     }
 }
 
-fn convert_sql(convert: &Option<UnitConversion>) -> &'static str {
+fn convert_sql(convert: &ValueFormat) -> &'static str {
     match convert {
-        Some(UnitConversion::TicksToSeconds) => " / 20",
-        None => "",
+        ValueFormat::Time => " / 20",
+        _ => "",
     }
 }
 

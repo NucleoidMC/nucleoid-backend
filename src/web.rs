@@ -12,6 +12,8 @@ use crate::statistics::database::*;
 use crate::statistics::model::DataQueryType;
 use crate::WebServerConfig;
 
+pub mod v2;
+
 pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
     let cors = warp::cors().allow_any_origin();
 
@@ -24,7 +26,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move |channel| get_status(controller.clone(), channel)
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let player_game_stats = warp::path("stats")
         .and(warp::path("player"))
@@ -34,7 +37,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move |uuid, namespace| get_player_stats(controller.clone(), uuid, Some(namespace))
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let all_player_game_stats = warp::path("stats")
         .and(warp::path("player"))
@@ -43,7 +47,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move |uuid| get_player_stats(controller.clone(), uuid, None)
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let all_game_stats = warp::path("stats")
         .and(warp::path("game"))
@@ -52,7 +57,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move |uuid| get_game_stats(controller.clone(), uuid)
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let get_recent_games = warp::path("games")
         .and(warp::path("recent"))
@@ -64,7 +70,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
                 get_recent_games(controller.clone(), config.clone(), query)
             }
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let get_leaderboard = warp::path("leaderboard")
         .and(warp::path::param::<String>())
@@ -72,14 +79,16 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move |id| get_leaderboard(controller.clone(), id)
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let list_leaderboards = warp::path("leaderboards")
         .and_then({
             let controller = controller.clone();
             move || list_leaderboards(controller.clone())
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let get_player_rankings = warp::path("player")
         .and(warp::path::param::<Uuid>())
@@ -88,7 +97,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move |id| get_player_rankings(controller.clone(), id)
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let get_statistics_stats = warp::path("stats")
         .and(warp::path("stats"))
@@ -96,7 +106,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move || get_statistics_stats(controller.clone())
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let data_query = warp::path("stats")
         .and(warp::path("data"))
@@ -107,7 +118,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let controller = controller.clone();
             move |query: DataQueryQuery| data_query(controller.clone(), query)
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
 
     let get_player_username = warp::path("player")
         .and(warp::path::param::<Uuid>())
@@ -116,7 +128,12 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
             let mojang_client = mojang_client.clone();
             move |id| get_player_username(mojang_client.clone(), id)
         })
-        .with(&cors);
+        .with(&cors)
+        .boxed();
+    
+    let v2 = warp::path("v2")
+        .and(v2::build_v2(controller))
+        .boxed();
 
     let combined = status
         .or(player_game_stats)
@@ -128,7 +145,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .or(list_leaderboards)
         .or(get_player_rankings)
         .or(data_query)
-        .or(get_player_username);
+        .or(get_player_username)
+        .or(v2);
 
     warp::serve(combined)
         .run(([127, 0, 0, 1], config.port))

@@ -17,6 +17,8 @@ use crate::statistics::model::{
 };
 use crate::{Controller, StatisticsConfig};
 
+use super::leaderboards::database::LeaderboardMetadata;
+
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
     pool: Pool,
@@ -533,6 +535,25 @@ impl Handler<GetLeaderboard> for StatisticDatabaseController {
         _ctx: &mut Context<Self>,
     ) -> <GetLeaderboard as Message>::Result {
         self.leaderboards.get_leaderboard(&message.0).await
+    }
+}
+
+pub struct GetLeaderboardV2(pub String);
+
+impl Message for GetLeaderboardV2 {
+    type Result = StatisticsDatabaseResult<Option<(LeaderboardMetadata, Vec<LeaderboardEntry>)>>;
+}
+
+#[async_trait]
+impl Handler<GetLeaderboardV2> for StatisticDatabaseController {
+    async fn handle(
+        &mut self,
+        message: GetLeaderboardV2,
+        _ctx: &mut Context<Self>,
+    ) -> <GetLeaderboardV2 as Message>::Result {
+        let metadata = self.leaderboards.get_leaderboard_metadata(&message.0).await?;
+        let entries = self.leaderboards.get_leaderboard(&message.0).await?;
+        Ok(metadata.zip(entries))
     }
 }
 

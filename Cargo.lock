@@ -1143,7 +1143,7 @@ dependencies = [
 [[package]]
 name = "nucleoid-leaderboards"
 version = "0.1.0"
-source = "git+https://github.com/NucleoidMC/nucleoid-leaderboards.git#1e20039885bf782a426faefbeec968601762ae62"
+source = "git+https://github.com/NucleoidMC/nucleoid-leaderboards.git#2421ca02a657387f6ef6fd34992c98774c1e28ee"
 dependencies = [
  "serde",
 ]
