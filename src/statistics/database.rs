@@ -17,11 +17,14 @@ use crate::statistics::model::{
 };
 use crate::{Controller, StatisticsConfig};
 
+use super::wrapped::{NucleoidWrapped, PlayerWrappedData};
+
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
     pool: Pool,
     _config: StatisticsConfig,
     leaderboards: LeaderboardsDatabase,
+    wrapped: NucleoidWrapped,
 }
 
 impl StatisticDatabaseController {
@@ -33,12 +36,15 @@ impl StatisticDatabaseController {
     ) -> StatisticsDatabaseResult<Self> {
         let pool = Pool::new(config.database_url.clone());
 
+        let wrapped = NucleoidWrapped::new(pool.clone());
+
         let handler = Self {
             _controller: controller.clone(),
             pool: pool.clone(),
             _config: config.clone(),
             leaderboards: LeaderboardsDatabase::new(postgres_pool.clone(), pool, leaderboards)
                 .await?,
+            wrapped,
         };
 
         initialise_database(&handler.pool).await?;
@@ -408,6 +414,11 @@ impl StatisticDatabaseController {
 
         Ok(data)
     }
+
+    async fn wrapped_data(&self, player_id: &Uuid) -> StatisticsDatabaseResult<PlayerWrappedData> {
+        let result = self.wrapped.build_wrapped(player_id).await?;
+        Ok(result)
+    }
 }
 
 impl Actor for StatisticDatabaseController {}
@@ -584,6 +595,23 @@ impl Handler<DataQuery> for StatisticDatabaseController {
         _ctx: &mut Context<Self>,
     ) -> <DataQuery as Message>::Result {
         self.data_query(message.0).await
+    }
+}
+
+pub struct WrappedData(pub Uuid);
+
+impl Message for WrappedData {
+    type Result = StatisticsDatabaseResult<PlayerWrappedData>;
+}
+
+#[async_trait]
+impl Handler<WrappedData> for StatisticDatabaseController {
+    async fn handle(
+        &mut self,
+        message: WrappedData,
+        _ctx: &mut Context<Self>,
+    ) -> <WrappedData as Message>::Result {
+        self.wrapped_data(&message.0).await
     }
 }
 

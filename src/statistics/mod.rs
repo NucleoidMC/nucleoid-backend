@@ -10,6 +10,7 @@ use crate::{Controller, RegisterStatisticsDatabaseController, StatisticsConfig, 
 pub mod database;
 pub mod leaderboards;
 pub mod model;
+mod wrapped;
 
 pub async fn run(
     controller: Address<Controller>,

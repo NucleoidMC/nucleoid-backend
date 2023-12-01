@@ -118,6 +118,15 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         })
         .with(&cors);
 
+    let nucleoid_wrapped = warp::path("player")
+        .and(warp::path::param::<Uuid>())
+        .and(warp::path("wrapped"))
+        .and_then({
+            let controller = controller.clone();
+            move |id| nucleoid_wrapped(controller.clone(), id)
+        })
+        .with(&cors);
+
     let combined = status
         .or(player_game_stats)
         .or(all_player_game_stats)
@@ -128,7 +137,8 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
         .or(list_leaderboards)
         .or(get_player_rankings)
         .or(data_query)
-        .or(get_player_username);
+        .or(get_player_username)
+        .or(nucleoid_wrapped);
 
     warp::serve(combined)
         .run(([127, 0, 0, 1], config.port))
@@ -254,6 +264,14 @@ async fn get_player_username(mojang_client: Address<MojangApiClient>, id: Uuid) 
         .await
         .expect("Mojang client disconnected");
     handle_option_result(profile)
+}
+
+async fn nucleoid_wrapped(controller: Address<Controller>, player_id: Uuid) -> ApiResult {
+    let statistics = get_statistics_controller(controller).await?;
+    let res = statistics.send(WrappedData(player_id))
+        .await
+        .expect("controller disconnected");
+    handle_result(res)
 }
 
 #[derive(Deserialize)]
