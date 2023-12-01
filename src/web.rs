@@ -268,7 +268,8 @@ async fn get_player_username(mojang_client: Address<MojangApiClient>, id: Uuid) 
 
 async fn nucleoid_wrapped(controller: Address<Controller>, player_id: Uuid) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
-    let res = statistics.send(WrappedData(player_id))
+    let res = statistics
+        .send(WrappedData(player_id))
         .await
         .expect("controller disconnected");
     handle_result(res)

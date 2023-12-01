@@ -6,12 +6,8 @@ pub struct NucleoidWrapped {
 }
 
 impl NucleoidWrapped {
-    pub fn new(
-        clickhouse_pool: clickhouse_rs::Pool,
-    ) -> Self {
-        Self {
-            clickhouse_pool,
-        }
+    pub fn new(clickhouse_pool: clickhouse_rs::Pool) -> Self {
+        Self { clickhouse_pool }
     }
 
     async fn played_count(&self, player: &Uuid) -> Result<u64, clickhouse_rs::errors::Error> {
@@ -28,14 +24,17 @@ impl NucleoidWrapped {
             // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
             player_id = player
         )).fetch_all().await?;
-        if let Some(row) = results.rows().nth(0) {
+        if let Some(row) = results.rows().next() {
             Ok(row.get("total")?)
         } else {
             Ok(0)
         }
     }
 
-    async fn top_games(&self, player: &Uuid) -> Result<Vec<PerGameStat>, clickhouse_rs::errors::Error> {
+    async fn top_games(
+        &self,
+        player: &Uuid,
+    ) -> Result<Vec<PerGameStat>, clickhouse_rs::errors::Error> {
         let mut ch_handle = self.clickhouse_pool.get_handle().await?;
         let results = ch_handle.query(format!(
             r#"
@@ -57,10 +56,7 @@ impl NucleoidWrapped {
         for row in results.rows() {
             let namespace: String = row.get("namespace")?;
             let total = row.get("total")?;
-            top_games.push(PerGameStat {
-                namespace,
-                total,
-            });
+            top_games.push(PerGameStat { namespace, total });
         }
 
         Ok(top_games)
@@ -80,14 +76,17 @@ impl NucleoidWrapped {
             // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
             player_id = player
         )).fetch_all().await?;
-        if let Some(row) = results.rows().nth(0) {
+        if let Some(row) = results.rows().next() {
             Ok(row.get("total")?)
         } else {
             Ok(0)
         }
     }
 
-    async fn days_played_games(&self, player: &Uuid) -> Result<Vec<PerGameStat>, clickhouse_rs::errors::Error> {
+    async fn days_played_games(
+        &self,
+        player: &Uuid,
+    ) -> Result<Vec<PerGameStat>, clickhouse_rs::errors::Error> {
         let mut ch_handle = self.clickhouse_pool.get_handle().await?;
         let results = ch_handle.query(format!(
             r#"
@@ -109,10 +108,7 @@ impl NucleoidWrapped {
         for row in results.rows() {
             let namespace: String = row.get("namespace")?;
             let total = row.get("total")?;
-            top_games.push(PerGameStat {
-                namespace,
-                total,
-            });
+            top_games.push(PerGameStat { namespace, total });
         }
 
         Ok(top_games)
@@ -120,8 +116,9 @@ impl NucleoidWrapped {
 
     async fn most_players(&self, player: &Uuid) -> Result<u64, clickhouse_rs::errors::Error> {
         let mut ch_handle = self.clickhouse_pool.get_handle().await?;
-        let results = ch_handle.query(format!(
-            r#"
+        let results = ch_handle
+            .query(format!(
+                r#"
             SELECT
                 MAX(total) as total
             FROM
@@ -139,20 +136,26 @@ impl NucleoidWrapped {
                 INNER JOIN player_statistics ON player_statistics.game_id = games.game_id
                 GROUP BY game_id)
             "#,
-            // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
-            player_id = player
-        )).fetch_all().await?;
-        if let Some(row) = results.rows().nth(0) {
+                // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
+                player_id = player
+            ))
+            .fetch_all()
+            .await?;
+        if let Some(row) = results.rows().next() {
             Ok(row.get("total")?)
         } else {
             Ok(0)
         }
     }
 
-    async fn most_players_games(&self, player: &Uuid) -> Result<Vec<PerGameStat>, clickhouse_rs::errors::Error> {
+    async fn most_players_games(
+        &self,
+        player: &Uuid,
+    ) -> Result<Vec<PerGameStat>, clickhouse_rs::errors::Error> {
         let mut ch_handle = self.clickhouse_pool.get_handle().await?;
-        let results = ch_handle.query(format!(
-            r#"
+        let results = ch_handle
+            .query(format!(
+                r#"
             SELECT
                 MAX(total) as total,
                 namespace
@@ -175,25 +178,27 @@ impl NucleoidWrapped {
             GROUP BY namespace
             ORDER BY total DESC
             "#,
-            // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
-            player_id = player
-        )).fetch_all().await?;
+                // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
+                player_id = player
+            ))
+            .fetch_all()
+            .await?;
 
         let mut top_games = Vec::with_capacity(results.row_count());
 
         for row in results.rows() {
             let namespace: String = row.get("namespace")?;
             let total = row.get("total")?;
-            top_games.push(PerGameStat {
-                namespace,
-                total,
-            });
+            top_games.push(PerGameStat { namespace, total });
         }
 
         Ok(top_games)
     }
 
-    pub async fn build_wrapped(&self, player: &Uuid) -> Result<PlayerWrappedData, clickhouse_rs::errors::Error> {
+    pub async fn build_wrapped(
+        &self,
+        player: &Uuid,
+    ) -> Result<PlayerWrappedData, clickhouse_rs::errors::Error> {
         let played_count = self.played_count(player).await?;
         let top_games = self.top_games(player).await?;
         let days_played = self.days_played(player).await?;

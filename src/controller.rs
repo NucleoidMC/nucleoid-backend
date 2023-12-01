@@ -299,7 +299,11 @@ impl Handler<OutgoingChat> for Controller {
 
 #[async_trait]
 impl Handler<OutgoingCommand> for Controller {
-    async fn handle(&mut self, message: OutgoingCommand, _ctx: &mut Context<Self>) -> <OutgoingCommand as Message>::Result {
+    async fn handle(
+        &mut self,
+        message: OutgoingCommand,
+        _ctx: &mut Context<Self>,
+    ) -> <OutgoingCommand as Message>::Result {
         println!(
             "[{}] <@{}> /{}",
             message.channel, message.sender, message.command

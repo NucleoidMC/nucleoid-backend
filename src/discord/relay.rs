@@ -250,7 +250,13 @@ impl Handler {
         }
     }
 
-    pub async fn send_relay_command(&self, ctx: &SerenityContext, message: &SerenityMessage, channel: &str, command: &[&str]) -> CommandResult {
+    pub async fn send_relay_command(
+        &self,
+        ctx: &SerenityContext,
+        message: &SerenityMessage,
+        channel: &str,
+        command: &[&str],
+    ) -> CommandResult {
         let sender = self.sender_name(ctx, message).await;
         let roles = if let Ok(member) = message.member(&ctx).await {
             member.roles.iter().map(ToString::to_string).collect()
@@ -258,7 +264,8 @@ impl Handler {
             Vec::new()
         };
 
-        let success = self.controller
+        let success = self
+            .controller
             .send(OutgoingCommand {
                 channel: channel.to_string(),
                 command: command.join(" "),
