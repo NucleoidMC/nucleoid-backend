@@ -119,10 +119,7 @@ impl NucleoidWrapped {
         let results = ch_handle
             .query(format!(
                 r#"
-            SELECT
-                MAX(total) as total
-            FROM
-                (SELECT
+                SELECT
                     COUNT(DISTINCT player_id) as total
                 FROM
                     (SELECT
@@ -134,7 +131,6 @@ impl NucleoidWrapped {
                         AND (games.date_played > '2022-12-31 00:00:00')
                     GROUP BY game_id) AS games
                 INNER JOIN player_statistics ON player_statistics.game_id = games.game_id
-                GROUP BY game_id)
             "#,
                 // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
                 player_id = player
@@ -142,7 +138,9 @@ impl NucleoidWrapped {
             .fetch_all()
             .await?;
         if let Some(row) = results.rows().next() {
-            Ok(row.get("total")?)
+            let mut total: u64 = row.get("total")?;
+            total -= 1;
+            Ok(total)
         } else {
             Ok(0)
         }
@@ -156,11 +154,7 @@ impl NucleoidWrapped {
         let results = ch_handle
             .query(format!(
                 r#"
-            SELECT
-                MAX(total) as total,
-                namespace
-            FROM
-                (SELECT
+                SELECT
                     COUNT(DISTINCT player_id) as total,
                     namespace
                 FROM
@@ -174,9 +168,8 @@ impl NucleoidWrapped {
                         AND (games.date_played > '2022-12-31 00:00:00')
                     GROUP BY game_id, namespace) AS games
                 INNER JOIN player_statistics ON player_statistics.game_id = games.game_id
-                GROUP BY game_id, namespace)
-            GROUP BY namespace
-            ORDER BY total DESC
+                GROUP BY namespace
+                ORDER BY total DESC
             "#,
                 // safety: player is a uuid, which has a fixed format which is safe to insert directly into the sql
                 player_id = player
@@ -188,7 +181,8 @@ impl NucleoidWrapped {
 
         for row in results.rows() {
             let namespace: String = row.get("namespace")?;
-            let total = row.get("total")?;
+            let mut total: u64 = row.get("total")?;
+            total -= 1;
             top_games.push(PerGameStat { namespace, total });
         }
 
