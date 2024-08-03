@@ -75,7 +75,7 @@ impl StatisticDatabaseController {
             SELECT
                 namespace,
                 key,
-                SUM(value)
+                SUM(value) as total
             FROM player_statistics
             WHERE
                 {}
@@ -94,7 +94,7 @@ impl StatisticDatabaseController {
         for row in block.rows() {
             let namespace: String = row.get("namespace")?;
             let key: String = row.get("key")?;
-            let value: f64 = row.get("sum(value)")?;
+            let value: f64 = row.get("total")?;
             if !result.contains_key(&namespace) {
                 result.insert(namespace.clone(), HashMap::new());
             }
