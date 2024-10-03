@@ -1,6 +1,6 @@
 # Based on the labrinth Dockerfile: https://github.com/modrinth/labrinth/blob/master/Dockerfile
 
-FROM rust:1.53
+FROM rust:1.79
 
 WORKDIR /srv/backend
 
