@@ -169,10 +169,7 @@ async fn get_player_stats(
 
     if let Some(namespace) = &namespace {
         for c in namespace.chars() {
-            if !(c.is_ascii_lowercase()
-                || c.is_ascii_uppercase()
-                || c.is_ascii_digit()
-                || c == '_')
+            if !(c.is_ascii_lowercase() || c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
             {
                 return Ok(send_http_status(StatusCode::BAD_REQUEST));
             }

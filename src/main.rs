@@ -23,8 +23,7 @@ async fn main() {
     env_logger::init();
 
     let config = config::load();
-    let controller = xtra::spawn_tokio(Controller::new(config.clone())
-        .await, Mailbox::unbounded());
+    let controller = xtra::spawn_tokio(Controller::new(config.clone()).await, Mailbox::unbounded());
 
     let mut futures = Vec::with_capacity(5);
 

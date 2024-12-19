@@ -429,11 +429,7 @@ pub struct GetPlayerStats {
 impl Handler<GetPlayerStats> for StatisticDatabaseController {
     type Return = StatisticsDatabaseResult<Option<PlayerStatsResponse>>;
 
-    async fn handle(
-        &mut self,
-        message: GetPlayerStats,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, message: GetPlayerStats, _ctx: &mut Context<Self>) -> Self::Return {
         self.get_player_stats(&message.uuid, &message.namespace)
             .await
     }
@@ -444,11 +440,7 @@ pub struct GetGameStats(pub Uuid);
 impl Handler<GetGameStats> for StatisticDatabaseController {
     type Return = StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>>;
 
-    async fn handle(
-        &mut self,
-        message: GetGameStats,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, message: GetGameStats, _ctx: &mut Context<Self>) -> Self::Return {
         self.get_game_stats(&message.0).await
     }
 }
@@ -461,11 +453,7 @@ pub struct GetRecentGames {
 impl Handler<GetRecentGames> for StatisticDatabaseController {
     type Return = StatisticsDatabaseResult<Vec<RecentGame>>;
 
-    async fn handle(
-        &mut self,
-        message: GetRecentGames,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, message: GetRecentGames, _ctx: &mut Context<Self>) -> Self::Return {
         self.get_recent_games(message.limit, message.player_id)
             .await
     }
@@ -518,11 +506,7 @@ pub struct GetLeaderboard(pub String);
 impl Handler<GetLeaderboard> for StatisticDatabaseController {
     type Return = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
 
-    async fn handle(
-        &mut self,
-        message: GetLeaderboard,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> Self::Return {
         self.leaderboards.get_leaderboard(&message.0).await
     }
 }
@@ -560,11 +544,7 @@ pub struct DataQuery(pub DataQueryType);
 impl Handler<DataQuery> for StatisticDatabaseController {
     type Return = StatisticsDatabaseResult<Vec<Datapoint>>;
 
-    async fn handle(
-        &mut self,
-        message: DataQuery,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, message: DataQuery, _ctx: &mut Context<Self>) -> Self::Return {
         self.data_query(message.0).await
     }
 }
@@ -574,11 +554,7 @@ pub struct WrappedData(pub Uuid);
 impl Handler<WrappedData> for StatisticDatabaseController {
     type Return = StatisticsDatabaseResult<PlayerWrappedData>;
 
-    async fn handle(
-        &mut self,
-        message: WrappedData,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, message: WrappedData, _ctx: &mut Context<Self>) -> Self::Return {
         self.wrapped_data(&message.0).await
     }
 }

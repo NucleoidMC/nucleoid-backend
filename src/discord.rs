@@ -27,7 +27,7 @@ impl CacheHttp for CacheAndHttp {
     fn http(&self) -> &Http {
         &self.http
     }
-    
+
     fn cache(&self) -> Option<&Arc<Cache>> {
         Some(&self.cache)
     }
@@ -201,24 +201,34 @@ impl Handler<ReportError> for DiscordClient {
         if let (Some(cache_and_http), Some(webhook_config)) =
             (&self.cache_and_http, &self.config.error_webhook)
         {
-            if let Ok(webhook) = Webhook::from_id_with_token(cache_and_http, webhook_config.id, &webhook_config.token).await
+            if let Ok(webhook) = Webhook::from_id_with_token(
+                cache_and_http,
+                webhook_config.id,
+                &webhook_config.token,
+            )
+            .await
             {
                 let embed = CreateEmbed::new()
                     .title(message.title)
                     .description(message.description)
                     .fields(if let Some(fields) = message.fields {
-                        fields.iter().map(|(name, value)| {
-                            (name.clone(), value.clone(), false)
-                        }).collect::<Vec<_>>()
+                        fields
+                            .iter()
+                            .map(|(name, value)| (name.clone(), value.clone(), false))
+                            .collect::<Vec<_>>()
                     } else {
                         vec![]
                     });
 
                 let res = webhook
-                    .execute(&cache_and_http, false, ExecuteWebhook::new()
-                        .username("Backend Error Reporting")
-                        .embed(embed))
-                .await;
+                    .execute(
+                        &cache_and_http,
+                        false,
+                        ExecuteWebhook::new()
+                            .username("Backend Error Reporting")
+                            .embed(embed),
+                    )
+                    .await;
 
                 if let Err(e) = res {
                     warn!("Failed to report error to discord: {}", e);
@@ -237,12 +247,7 @@ struct DiscordHandler {
 }
 
 impl DiscordHandler {
-    async fn handle_command(
-        &self,
-        tokens: &[&str],
-        ctx: &SerenityContext,
-        message: &Message,
-    ) {
+    async fn handle_command(&self, tokens: &[&str], ctx: &SerenityContext, message: &Message) {
         let admin = check_message_admin(ctx, message).await;
 
         let result = match tokens {

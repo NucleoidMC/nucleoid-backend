@@ -192,7 +192,6 @@ pub enum OutgoingMessage {
 
 struct HandleIncomingMessage(Result<IncomingMessage>);
 
-
 impl Handler<HandleIncomingMessage> for IntegrationsClient {
     type Return = ();
 

@@ -87,11 +87,7 @@ impl Handler<GetPlayerUsername> for MojangApiClient {
 impl Handler<ClearCache> for MojangApiClient {
     type Return = ();
 
-    async fn handle(
-        &mut self,
-        _message: ClearCache,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, _message: ClearCache, _ctx: &mut Context<Self>) -> Self::Return {
         self.username_cache.clear();
     }
 }

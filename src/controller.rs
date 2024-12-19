@@ -129,10 +129,7 @@ impl Handler<RegisterIntegrationsClient> for Controller {
         self.integration_clients
             .insert(message.channel.clone(), message.client);
 
-        let status = self
-            .status_by_channel
-            .entry(message.channel)
-            .or_default();
+        let status = self.status_by_channel.entry(message.channel).or_default();
         status.game_version = message.game_version;
         status.server_ip = message.server_ip;
     }
@@ -235,11 +232,7 @@ impl Handler<OutgoingChat> for Controller {
 impl Handler<OutgoingCommand> for Controller {
     type Return = bool;
 
-    async fn handle(
-        &mut self,
-        message: OutgoingCommand,
-        _ctx: &mut Context<Self>,
-    ) -> Self::Return {
+    async fn handle(&mut self, message: OutgoingCommand, _ctx: &mut Context<Self>) -> Self::Return {
         println!(
             "[{}] <@{}> /{}",
             message.channel, message.sender, message.command

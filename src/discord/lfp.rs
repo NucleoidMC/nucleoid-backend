@@ -104,7 +104,11 @@ impl Channel {
     }
 
     fn remove_registration(&mut self, user: UserId) -> Option<Registration> {
-        match self.registrations.iter().position(|r| r.user_id == user.get()) {
+        match self
+            .registrations
+            .iter()
+            .position(|r| r.user_id == user.get())
+        {
             Some(idx) => Some(self.registrations.remove(idx)),
             None => None,
         }
@@ -141,7 +145,12 @@ impl Handler {
 
         let register_message = message
             .channel_id
-            .send_message(&ctx.http, CreateMessage::new().content(description).reactions(vec![REACTION]))
+            .send_message(
+                &ctx.http,
+                CreateMessage::new()
+                    .content(description)
+                    .reactions(vec![REACTION]),
+            )
             .await?;
 
         let channel = match message.channel(ctx).await {
@@ -172,10 +181,7 @@ impl Handler {
     pub async fn handle_reaction_add(&self, ctx: &SerenityContext, reaction: Reaction) {
         if let Some(channel) = self.get_channel(ctx, reaction.channel_id).await {
             if let (Some(user), Some(guild_id)) = (reaction.user_id, reaction.guild_id) {
-                if let Err(err) = self
-                    .add_registration(ctx, user, guild_id, channel)
-                    .await
-                {
+                if let Err(err) = self.add_registration(ctx, user, guild_id, channel).await {
                     error!("Failed to add looking-for-player registration: {:?}", err);
                 }
             }
@@ -221,7 +227,14 @@ impl Handler {
 
         let message = channel
             .webhook
-            .execute(&ctx.http, true, ExecuteWebhook::new().content(content).username(name).avatar_url(avatar))
+            .execute(
+                &ctx.http,
+                true,
+                ExecuteWebhook::new()
+                    .content(content)
+                    .username(name)
+                    .avatar_url(avatar),
+            )
             .await?;
 
         if let Some(message) = message {

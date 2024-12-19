@@ -112,9 +112,11 @@ pub async fn send_system(discord: &mut DiscordClient, send_system: SendSystem) {
         let relay_store = data.get::<StoreKey>().unwrap();
         if let Some(relay) = relay_store.channel_to_relay.get(&send_system.channel) {
             let result = ChannelId::new(relay.discord_channel)
-                .send_message(&cache_and_http.http, CreateMessage::new()
-                    .content(send_system.content)
-                    .allowed_mentions(CreateAllowedMentions::new())
+                .send_message(
+                    &cache_and_http.http,
+                    CreateMessage::new()
+                        .content(send_system.content)
+                        .allowed_mentions(CreateAllowedMentions::new()),
                 )
                 .await;
 
@@ -179,7 +181,10 @@ impl Handler {
         match message.channel(ctx).await {
             Ok(Channel::Guild(guild_channel)) => {
                 let webhook = guild_channel
-                    .create_webhook(&ctx.http, CreateWebhook::new(format!("Relay ({})", channel)))
+                    .create_webhook(
+                        &ctx.http,
+                        CreateWebhook::new(format!("Relay ({})", channel)),
+                    )
                     .await?;
 
                 let relay = ChannelRelay {
@@ -227,7 +232,10 @@ impl Handler {
         let data = ctx.data.read().await;
 
         let relay_store = data.get::<StoreKey>().unwrap();
-        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.get()) {
+        if let Some(channel) = relay_store
+            .discord_to_channel
+            .get(&message.channel_id.get())
+        {
             let message = self.parse_outgoing_chat_with_reply(ctx, message).await;
 
             self.controller
@@ -277,7 +285,10 @@ impl Handler {
         let data = ctx.data.read().await;
 
         let relay_store = data.get::<StoreKey>().unwrap();
-        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.get()) {
+        if let Some(channel) = relay_store
+            .discord_to_channel
+            .get(&message.channel_id.get())
+        {
             let command = self.sanitize_message_content(ctx, message).await[2..].to_owned();
             let sender = self.sender_name(ctx, message).await;
             let roles = if let Ok(member) = message.member(&ctx).await {
