@@ -45,7 +45,6 @@ pub struct ChatMessage {
 pub struct DiscordUser {
     pub id: u64,
     pub name: String,
-    pub discriminator: u16,
 }
 
 #[derive(Serialize, Debug)]

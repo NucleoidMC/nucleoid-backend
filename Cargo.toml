@@ -14,13 +14,14 @@ path = "src/main.rs"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 warp = "0.3"
-reqwest = { version = "0.11", features = ["rustls-tls", "json"], default-features = false }
-lru = "0.9"
+reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
+lru = "0.12"
 futures = "0.3"
 
-deadpool-postgres = "0.10"
+deadpool-postgres = "0.14"
 tokio-postgres = { version = "0.7", features = ["with-uuid-1"] }
 chrono = { version = "0.4", features = ["serde"] }
+# Pinned to 0.8 because of clickhouse-rs
 chrono-tz = "0.8"
 
 byteorder = "1"
@@ -33,15 +34,15 @@ uuid = { version = "1", features = ["serde"] }
 regex = "1.7"
 lazy_static = "1.4" # todo: replace with once_cell/the stdlib implementation
 
-serenity = { version = "0.11", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "http", "rustls_backend"] }
+serenity = { version = "0.12", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "http", "rustls_backend"] }
 async-trait = "0.1"
 
-xtra = "0.5.2"
+xtra = { version = "0.6", features = ["macros", "sink", "tokio"] }
 
-thiserror = "1"
+thiserror = "2"
 
 log = "0.4" # todo: replace with tracing
-env_logger = "0.10"
+env_logger = "0.11"
 
 walkdir = "2"
 nucleoid-leaderboards = { git = "https://github.com/NucleoidMC/nucleoid-leaderboards.git" }

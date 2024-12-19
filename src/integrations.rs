@@ -1,7 +1,6 @@
 use std::io;
 use std::pin::Pin;
 
-use async_trait::async_trait;
 use bytes::Bytes;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{error, info, warn};
@@ -9,13 +8,12 @@ use serde::{Deserialize, Serialize};
 
 use tokio::net::{TcpListener, TcpStream};
 use xtra::prelude::*;
-use xtra::KeepRunning;
 
 use crate::controller::*;
 use crate::model::*;
 use crate::statistics::database::UploadStatsBundle;
 use crate::statistics::model::GameStatsBundle;
-use crate::{IntegrationsConfig, TokioGlobal};
+use crate::IntegrationsConfig;
 use uuid::Uuid;
 
 const MAX_FRAME_LENGTH: usize = 4 * 1024 * 1024;
@@ -96,10 +94,10 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
         server_type,
     };
 
-    let client = client.create(None).spawn(&mut TokioGlobal);
+    let client = xtra::spawn_tokio(client, Mailbox::unbounded());
 
     controller
-        .do_send_async(RegisterIntegrationsClient {
+        .send(RegisterIntegrationsClient {
             channel,
             game_version,
             server_ip,
@@ -108,7 +106,10 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
         .await
         .expect("controller disconnected");
 
-    client.attach_stream(stream).await;
+    if let Err(e) = stream.map(|m| Ok(m)).forward(client.into_sink()).await {
+        log::error!("error in integrations client: {e}");
+    }
+
     Ok(())
 }
 
@@ -119,14 +120,14 @@ pub struct IntegrationsClient {
     server_type: ServerType,
 }
 
-#[async_trait]
 impl Actor for IntegrationsClient {
-    async fn stopping(&mut self, _ctx: &mut Context<Self>) -> KeepRunning {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {
         let unregister = UnregisterIntegrationsClient {
             channel: self.channel.clone(),
         };
-        let _ = self.controller.do_send_async(unregister).await;
-        KeepRunning::StopAll
+        let _ = self.controller.send(unregister).await;
     }
 }
 
@@ -189,18 +190,12 @@ pub enum OutgoingMessage {
     },
 }
 
-impl Message for OutgoingMessage {
-    type Result = ();
-}
-
 struct HandleIncomingMessage(Result<IncomingMessage>);
 
-impl Message for HandleIncomingMessage {
-    type Result = ();
-}
 
-#[async_trait]
 impl Handler<HandleIncomingMessage> for IntegrationsClient {
+    type Return = ();
+
     async fn handle(&mut self, message: HandleIncomingMessage, ctx: &mut Context<Self>) {
         match message.0 {
             Ok(message) => {
@@ -212,7 +207,7 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                             sender,
                             content,
                         };
-                        self.controller.do_send_async(incoming_chat).await
+                        self.controller.send(incoming_chat).await
                     }
                     Status { games, players } => {
                         let status_update = StatusUpdate {
@@ -220,14 +215,14 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                             games,
                             players,
                         };
-                        self.controller.do_send_async(status_update).await
+                        self.controller.send(status_update).await
                     }
                     LifecycleStart {} => {
                         let lifecycle = ServerLifecycleStart {
                             channel: self.channel.clone(),
                             server_type: self.server_type.clone(),
                         };
-                        self.controller.do_send_async(lifecycle).await
+                        self.controller.send(lifecycle).await
                     }
                     LifecycleStop { crash } => {
                         let lifecycle = ServerLifecycleStop {
@@ -235,21 +230,21 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                             crash,
                             server_type: self.server_type.clone(),
                         };
-                        self.controller.do_send_async(lifecycle).await
+                        self.controller.send(lifecycle).await
                     }
                     Performance(performance) => {
                         let performance_update = PerformanceUpdate {
                             channel: self.channel.clone(),
                             performance,
                         };
-                        self.controller.do_send_async(performance_update).await
+                        self.controller.send(performance_update).await
                     }
                     SystemMessage { content } => {
                         let system_message = ServerSystemMessage {
                             channel: self.channel.clone(),
                             content,
                         };
-                        self.controller.do_send_async(system_message).await
+                        self.controller.send(system_message).await
                     }
                     UploadStatistics { bundle, game_id } => {
                         if let Some(global) = &bundle.stats.global {
@@ -264,7 +259,7 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                             bundle,
                             server: self.channel.clone(),
                         };
-                        self.controller.do_send_async(upload_bundle_message).await
+                        self.controller.send(upload_bundle_message).await
                     }
                     _ => {
                         warn!(
@@ -276,7 +271,7 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                 };
 
                 if result.is_err() {
-                    ctx.stop();
+                    ctx.stop_self();
                 }
             }
             Err(Error::Json(err)) => {
@@ -284,14 +279,15 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
             }
             Err(err) => {
                 error!("integrations client closing with error: {:?}", err);
-                ctx.stop();
+                ctx.stop_self();
             }
         }
     }
 }
 
-#[async_trait]
 impl Handler<OutgoingMessage> for IntegrationsClient {
+    type Return = ();
+
     async fn handle(&mut self, message: OutgoingMessage, _ctx: &mut Context<Self>) {
         // TODO: how should we handle errors here?
         let _ = self.sink.send(message).await;

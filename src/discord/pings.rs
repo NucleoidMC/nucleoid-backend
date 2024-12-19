@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 use log::error;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serenity::all::{CreateAllowedMentions, CreateWebhook};
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Channel, Message as SerenityMessage};
 use serenity::model::id::{ChannelId, RoleId};
@@ -32,13 +32,13 @@ impl Store {
     pub fn ping_for_channel(&self, ping: &str, channel: ChannelId) -> Option<&Ping> {
         self.pings
             .get(ping)
-            .filter(|ping| ping.discord_channel == channel.0)
+            .filter(|ping| ping.discord_channel == channel.get())
     }
 
     pub fn ping_for_channel_mut(&mut self, ping: &str, channel: ChannelId) -> Option<&mut Ping> {
         self.pings
             .get_mut(ping)
-            .filter(|ping| ping.discord_channel == channel.0)
+            .filter(|ping| ping.discord_channel == channel.get())
     }
 }
 
@@ -77,29 +77,25 @@ pub async fn send(discord: &mut DiscordClient, send_ping: SendPing) {
             let ping_store = ping_store.get_mut_unchecked();
 
             if let Some(ping) = ping_store.pings.get_mut(&send_ping.ping) {
-                let role = RoleId(ping.discord_role);
+                let role = RoleId::new(ping.discord_role);
 
                 let new_ping = ping.try_new_ping(&discord.config);
 
                 let result = ping
                     .webhook
-                    .execute(&cache_and_http.http, false, move |message| {
-                        message.0.insert(
-                            "allowed_mentions",
-                            json!({"parse": [], "roles": [role.to_string()]}),
-                        );
-                        message.username(send_ping.sender_name);
-
+                    .execute(&cache_and_http.http, false, {
+                        let mut execute = ExecuteWebhook::new()
+                            .allowed_mentions(CreateAllowedMentions::new().roles([role]))
+                            .username(send_ping.sender_name)
+                            .content(if new_ping {
+                                format!("{}! {}", role.mention(), send_ping.content)
+                            } else {
+                                send_ping.content
+                            });
                         if let Some(icon) = send_ping.sender_icon {
-                            message.avatar_url(icon);
+                            execute = execute.avatar_url(icon);
                         }
-
-                        let content = if new_ping {
-                            format!("{}! {}", role.mention(), send_ping.content)
-                        } else {
-                            send_ping.content
-                        };
-                        message.content(content)
+                        execute
                     })
                     .await;
 
@@ -128,42 +124,46 @@ impl Handler {
         let mut data = ctx.data.write().await;
         let ping_store = data.get_mut::<StoreKey>().unwrap();
 
-        match (message.guild(&ctx.cache), message.channel(ctx).await) {
-            (Some(guild), Ok(Channel::Guild(channel))) => {
-                let role_id = RoleId(
-                    role_id
-                        .parse::<u64>()
-                        .map_err(|_| CommandError::InvalidRoleId)?,
-                );
-                if !guild.roles.contains_key(&role_id) {
-                    return Err(CommandError::InvalidRoleId);
-                }
+        let role_id = RoleId::new(
+            role_id
+                .parse::<u64>()
+                .map_err(|_| CommandError::InvalidRoleId)?,
+        );
 
-                let webhook = channel
-                    .create_webhook(&ctx.http, format!("Ping {}", ping))
-                    .await?;
-
-                ping_store
-                    .write(|ping_store| {
-                        let ping = ping.to_owned();
-                        if let std::collections::hash_map::Entry::Vacant(e) =
-                            ping_store.pings.entry(ping)
-                        {
-                            e.insert(Ping {
-                                discord_channel: channel.id.0,
-                                discord_role: role_id.0,
-                                webhook,
-                                last_ping_time: SystemTime::now(),
-                                allowed_roles: HashSet::new(),
-                            });
-                            Ok(())
-                        } else {
-                            Err(CommandError::PingAlreadyConnected)
-                        }
-                    })
-                    .await
+        if let Some(guild) = message.guild(&ctx.cache) {
+            if !guild.roles.contains_key(&role_id) {
+                return Err(CommandError::InvalidRoleId);
             }
-            _ => Err(CommandError::CannotRunHere),
+        } else {
+            return Err(CommandError::CannotRunHere);
+        }
+
+        if let Ok(Channel::Guild(channel)) = message.channel(ctx).await {
+            let webhook = channel
+                .create_webhook(&ctx.http, CreateWebhook::new(format!("Ping {}", ping)))
+                .await?;
+
+            ping_store
+                .write(|ping_store| {
+                    let ping = ping.to_owned();
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        ping_store.pings.entry(ping)
+                    {
+                        e.insert(Ping {
+                            discord_channel: channel.id.get(),
+                            discord_role: role_id.get(),
+                            webhook,
+                            last_ping_time: SystemTime::now(),
+                            allowed_roles: HashSet::new(),
+                        });
+                        Ok(())
+                    } else {
+                        Err(CommandError::PingAlreadyConnected)
+                    }
+                })
+                .await
+        } else {
+            Err(CommandError::CannotRunHere)
         }
     }
 
@@ -192,11 +192,7 @@ impl Handler {
             })
             .await?;
 
-        let webhook = ping.webhook;
-        // the unwrap of the token shouldn't fail as we should always receieve it when creating the webhook
-        ctx.http
-            .delete_webhook_with_token(webhook.id.0, &webhook.token.unwrap())
-            .await?;
+        ping.webhook.delete(&ctx.http).await?;
 
         Ok(())
     }
@@ -212,11 +208,13 @@ impl Handler {
             .parse::<u64>()
             .map_err(|_| CommandError::InvalidRoleId)?;
 
-        let guild = message
-            .guild(&ctx.cache)
-            .ok_or(CommandError::CannotRunHere)?;
-        if guild.roles.get(&RoleId(role)).is_none() {
-            return Err(CommandError::InvalidRoleId);
+        {
+            let guild = message
+                .guild(&ctx.cache)
+                .ok_or(CommandError::CannotRunHere)?;
+            if guild.roles.get(&RoleId::new(role)).is_none() {
+                return Err(CommandError::InvalidRoleId);
+            }
         }
 
         self.update_ping(ctx, message, ping, |ping| {
@@ -292,7 +290,7 @@ impl Handler {
             Some(ping) => {
                 let allowed = sender_roles
                     .iter()
-                    .any(|role| ping.allowed_roles.contains(&role.0));
+                    .any(|role| ping.allowed_roles.contains(&role.get()));
                 if !allowed {
                     return Err(CommandError::NotAllowed);
                 }
@@ -310,7 +308,7 @@ impl Handler {
             Some(changelog) => {
                 let _ = self
                     .discord
-                    .do_send_async(SendPing {
+                    .send(SendPing {
                         ping: ping.to_owned(),
                         sender_name: message.author.name.clone(),
                         sender_icon: message.author.avatar_url().clone(),

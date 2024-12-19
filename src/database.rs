@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use async_trait::async_trait;
 use deadpool_postgres::Pool;
 use log::error;
 use xtra::prelude::*;
 
 use crate::controller::*;
 use crate::model::*;
-use crate::{DatabaseConfig, TokioGlobal};
+use crate::DatabaseConfig;
 
 pub async fn run(controller: Address<Controller>, pool: Pool, config: DatabaseConfig) {
     let database = DatabaseClient {
@@ -16,14 +15,15 @@ pub async fn run(controller: Address<Controller>, pool: Pool, config: DatabaseCo
         _config: config,
         channels: HashMap::new(),
     };
-    let database = database.create(None).spawn(&mut TokioGlobal);
+    let database = xtra::spawn_tokio(database, Mailbox::unbounded());
 
     controller
-        .do_send_async(RegisterDatabaseClient { client: database })
+        .send(RegisterDatabaseClient { client: database })
         .await
         .expect("controller disconnected");
 }
 
+#[derive(Actor)]
 pub struct DatabaseClient {
     pool: Pool,
     _config: DatabaseConfig,
@@ -48,16 +48,10 @@ impl DatabaseClient {
     }
 }
 
-impl Actor for DatabaseClient {}
-
 pub struct WriteStatus {
     pub channel: String,
     pub time: SystemTime,
     pub status: ServerStatus,
-}
-
-impl Message for WriteStatus {
-    type Result = ();
 }
 
 pub struct WritePerformance {
@@ -66,18 +60,11 @@ pub struct WritePerformance {
     pub performance: ServerPerformance,
 }
 
-impl Message for WritePerformance {
-    type Result = ();
-}
-
 pub struct GetPostgresPool;
 
-impl Message for GetPostgresPool {
-    type Result = Pool;
-}
-
-#[async_trait]
 impl Handler<WriteStatus> for DatabaseClient {
+    type Return = ();
+
     async fn handle(&mut self, message: WriteStatus, _ctx: &mut Context<Self>) {
         let channel = DatabaseClient::get_or_open_channel(
             &mut self.channels,
@@ -96,8 +83,9 @@ impl Handler<WriteStatus> for DatabaseClient {
     }
 }
 
-#[async_trait]
 impl Handler<WritePerformance> for DatabaseClient {
+    type Return = ();
+
     async fn handle(&mut self, message: WritePerformance, _ctx: &mut Context<Self>) {
         let channel = DatabaseClient::get_or_open_channel(
             &mut self.channels,
@@ -116,13 +104,14 @@ impl Handler<WritePerformance> for DatabaseClient {
     }
 }
 
-#[async_trait]
 impl Handler<GetPostgresPool> for DatabaseClient {
+    type Return = Pool;
+
     async fn handle(
         &mut self,
         _message: GetPostgresPool,
         _ctx: &mut Context<Self>,
-    ) -> <GetPostgresPool as Message>::Result {
+    ) -> Self::Return {
         self.pool.clone()
     }
 }

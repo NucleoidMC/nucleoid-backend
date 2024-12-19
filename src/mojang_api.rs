@@ -1,23 +1,21 @@
 use std::{num::NonZeroUsize, time::Duration};
 
-use crate::TokioGlobal;
 use lru::LruCache;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use xtra::{Actor, Address, Context, Handler, Message};
+use xtra::{Actor, Address, Context, Handler, Mailbox};
 
 const USER_AGENT: &str = "nucleoid-backend (v1, https://github.com/NucleoidMC/nucleoid-backend)";
 const MOJANG_PROFILE_URL: &str = "https://sessionserver.mojang.com/session/minecraft/profile";
 
 const CACHE_CLEAR_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
 
+#[derive(Actor)]
 pub struct MojangApiClient {
     client: Client,
     username_cache: LruCache<Uuid, String>,
 }
-
-impl Actor for MojangApiClient {}
 
 impl MojangApiClient {
     pub fn start(cache_size: NonZeroUsize) -> Result<Address<Self>, ClientError> {
@@ -27,7 +25,7 @@ impl MojangApiClient {
             username_cache,
         };
 
-        let client = client.create(None).spawn(&mut TokioGlobal);
+        let client = xtra::spawn_tokio(client, Mailbox::unbounded());
 
         let client_weak = client.downgrade();
         // Based on https://github.com/NucleoidMC/player-face-api/blob/main/src/api.rs#L52-L63
@@ -68,23 +66,16 @@ impl MojangApiClient {
 
 pub struct GetPlayerUsername(pub Uuid);
 
-impl Message for GetPlayerUsername {
-    type Result = Result<Option<ProfileResponse>, ClientError>;
-}
-
 struct ClearCache;
 
-impl Message for ClearCache {
-    type Result = ();
-}
-
-#[async_trait::async_trait]
 impl Handler<GetPlayerUsername> for MojangApiClient {
+    type Return = Result<Option<ProfileResponse>, ClientError>;
+
     async fn handle(
         &mut self,
         message: GetPlayerUsername,
         _ctx: &mut Context<Self>,
-    ) -> <GetPlayerUsername as Message>::Result {
+    ) -> Self::Return {
         let username = self.get_username(&message.0).await?;
         Ok(username.map(|username| ProfileResponse {
             id: message.0,
@@ -93,13 +84,14 @@ impl Handler<GetPlayerUsername> for MojangApiClient {
     }
 }
 
-#[async_trait::async_trait]
 impl Handler<ClearCache> for MojangApiClient {
+    type Return = ();
+
     async fn handle(
         &mut self,
         _message: ClearCache,
         _ctx: &mut Context<Self>,
-    ) -> <ClearCache as Message>::Result {
+    ) -> Self::Return {
         self.username_cache.clear();
     }
 }

@@ -1,9 +1,7 @@
 use deadpool_postgres::{Pool, Runtime};
-use std::future::Future;
 use tokio_postgres::NoTls;
 
 use xtra::prelude::*;
-use xtra::spawn::Spawner;
 
 pub use config::*;
 pub use controller::*;
@@ -20,23 +18,13 @@ mod persistent;
 mod statistics;
 mod web;
 
-pub struct TokioGlobal;
-
-impl Spawner for TokioGlobal {
-    fn spawn<F: Future<Output = ()> + Send + 'static>(&mut self, fut: F) {
-        tokio::spawn(fut);
-    }
-}
-
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
     let config = config::load();
-    let controller = Controller::new(config.clone())
-        .await
-        .create(None)
-        .spawn(&mut TokioGlobal);
+    let controller = xtra::spawn_tokio(Controller::new(config.clone())
+        .await, Mailbox::unbounded());
 
     let mut futures = Vec::with_capacity(5);
 

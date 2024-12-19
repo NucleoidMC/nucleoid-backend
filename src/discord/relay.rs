@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use log::error;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serenity::all::{CreateAllowedMentions, CreateMessage, CreateWebhook, EditChannel};
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Channel, Message as SerenityMessage};
 use serenity::model::id::ChannelId;
@@ -68,6 +69,7 @@ impl<'de> Deserialize<'de> for Store {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChannelRelay {
+    discord_guild: u64,
     discord_channel: u64,
     webhook: Webhook,
 }
@@ -81,20 +83,19 @@ pub async fn send_chat(discord: &mut DiscordClient, send_chat: SendChat) {
 
             let result = relay
                 .webhook
-                .execute(&cache_and_http.http, false, move |webhook| {
-                    let mut webhook = webhook
+                .execute(&cache_and_http.http, false, {
+                    let mut execute = ExecuteWebhook::new()
                         .username(send_chat.sender.name)
-                        .content(send_chat.content);
-
-                    webhook.0.insert("allowed_mentions", json!({"parse": []}));
+                        .content(send_chat.content)
+                        .allowed_mentions(CreateAllowedMentions::new());
 
                     if let Some(avatar_url) = avatar_url {
                         let id = send_chat.sender.id.replace('-', "");
                         let avatar_url = format!("{}/{}", avatar_url, id);
-                        webhook = webhook.avatar_url(avatar_url);
+                        execute = execute.avatar_url(avatar_url);
                     }
 
-                    webhook
+                    execute
                 })
                 .await;
 
@@ -110,12 +111,11 @@ pub async fn send_system(discord: &mut DiscordClient, send_system: SendSystem) {
         let data = data.read().await;
         let relay_store = data.get::<StoreKey>().unwrap();
         if let Some(relay) = relay_store.channel_to_relay.get(&send_system.channel) {
-            let result = ChannelId(relay.discord_channel)
-                .send_message(&cache_and_http.http, move |message| {
-                    message
-                        .content(send_system.content)
-                        .allowed_mentions(|m| m.empty_parse())
-                })
+            let result = ChannelId::new(relay.discord_channel)
+                .send_message(&cache_and_http.http, CreateMessage::new()
+                    .content(send_system.content)
+                    .allowed_mentions(CreateAllowedMentions::new())
+                )
                 .await;
 
             if let Err(error) = result {
@@ -146,16 +146,8 @@ pub async fn update_status(discord: &mut DiscordClient, update_relay: UpdateRela
                 ),
             };
 
-            if let Some(Channel::Guild(channel)) =
-                cache_and_http.cache.channel(relay.discord_channel)
-            {
-                if channel.topic.as_ref() == Some(&topic) {
-                    return;
-                }
-            }
-
-            let edit_result = ChannelId(relay.discord_channel)
-                .edit(&cache_and_http.http, move |channel| channel.topic(topic))
+            let edit_result = ChannelId::new(relay.discord_channel)
+                .edit(&cache_and_http.http, EditChannel::new().topic(topic))
                 .await;
 
             if let Err(error) = edit_result {
@@ -187,11 +179,12 @@ impl Handler {
         match message.channel(ctx).await {
             Ok(Channel::Guild(guild_channel)) => {
                 let webhook = guild_channel
-                    .create_webhook(&ctx.http, format!("Relay ({})", channel))
+                    .create_webhook(&ctx.http, CreateWebhook::new(format!("Relay ({})", channel)))
                     .await?;
 
                 let relay = ChannelRelay {
-                    discord_channel: message.channel_id.0,
+                    discord_channel: message.channel_id.get(),
+                    discord_guild: guild_channel.guild_id.get(),
                     webhook,
                 };
 
@@ -218,17 +211,14 @@ impl Handler {
 
         let (_, relay) = relay_store
             .write(
-                |relay_store| match relay_store.remove_relay(message.channel_id.0) {
+                |relay_store| match relay_store.remove_relay(message.channel_id.get()) {
                     Some(channel) => Ok(channel),
                     None => Err(CommandError::ChannelNotConnected),
                 },
             )
             .await?;
 
-        // the unwrap of the token shouldn't fail as we should always receieve it when creating the webhook
-        ctx.http
-            .delete_webhook_with_token(relay.webhook.id.0, &relay.webhook.token.unwrap())
-            .await?;
+        relay.webhook.delete(&ctx.http).await?;
 
         Ok(())
     }
@@ -237,11 +227,11 @@ impl Handler {
         let data = ctx.data.read().await;
 
         let relay_store = data.get::<StoreKey>().unwrap();
-        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
+        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.get()) {
             let message = self.parse_outgoing_chat_with_reply(ctx, message).await;
 
             self.controller
-                .do_send_async(OutgoingChat {
+                .send(OutgoingChat {
                     channel: channel.clone(),
                     chat: message,
                 })
@@ -287,7 +277,7 @@ impl Handler {
         let data = ctx.data.read().await;
 
         let relay_store = data.get::<StoreKey>().unwrap();
-        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.0) {
+        if let Some(channel) = relay_store.discord_to_channel.get(&message.channel_id.get()) {
             let command = self.sanitize_message_content(ctx, message).await[2..].to_owned();
             let sender = self.sender_name(ctx, message).await;
             let roles = if let Ok(member) = message.member(&ctx).await {
@@ -297,7 +287,7 @@ impl Handler {
             };
 
             self.controller
-                .do_send_async(OutgoingCommand {
+                .send(OutgoingCommand {
                     channel: channel.clone(),
                     command,
                     sender,
@@ -331,9 +321,8 @@ impl Handler {
     ) -> ChatMessage {
         let sender = self.sender_name(ctx, message).await;
         let sender_user = DiscordUser {
-            id: message.author.id.0,
+            id: message.author.id.get(),
             name: message.author.name.clone(),
-            discriminator: message.author.discriminator,
         };
 
         let name_color = self.get_sender_name_color(ctx, message).await;
