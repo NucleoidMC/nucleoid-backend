@@ -212,7 +212,7 @@ impl Handler {
             let guild = message
                 .guild(&ctx.cache)
                 .ok_or(CommandError::CannotRunHere)?;
-            if guild.roles.get(&RoleId::new(role)).is_none() {
+            if !guild.roles.contains_key(&RoleId::new(role)) {
                 return Err(CommandError::InvalidRoleId);
             }
         }

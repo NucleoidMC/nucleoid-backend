@@ -106,7 +106,7 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
         .await
         .expect("controller disconnected");
 
-    if let Err(e) = stream.map(|m| Ok(m)).forward(client.into_sink()).await {
+    if let Err(e) = stream.map(Ok).forward(client.into_sink()).await {
         log::error!("error in integrations client: {e}");
     }
 

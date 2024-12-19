@@ -1,8 +1,8 @@
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serenity::all::{CreateMessage, CreateWebhook, ExecuteWebhook, Guild, GuildId, GuildRef};
-use serenity::model::channel::{Channel as SerenityChannel, GuildChannel};
+use serenity::all::{CreateMessage, CreateWebhook, ExecuteWebhook, GuildId};
+use serenity::model::channel::Channel as SerenityChannel;
 use serenity::model::id::{ChannelId, MessageId, RoleId, UserId};
 use serenity::model::webhook::Webhook;
 
@@ -118,7 +118,7 @@ struct Registration {
 }
 
 pub struct Handler {
-    pub discord: Address<DiscordClient>,
+    pub _discord: Address<DiscordClient>,
     pub config: DiscordConfig,
 }
 

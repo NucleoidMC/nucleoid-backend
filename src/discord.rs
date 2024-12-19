@@ -2,8 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::{error, info, warn};
-use serde_json::json;
-use serenity::all::{Cache, CreateEmbed, ExecuteWebhook, Http, Webhook, WebhookId};
+use serenity::all::{Cache, CreateEmbed, ExecuteWebhook, Http, Webhook};
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Message, Reaction};
 use serenity::{async_trait, prelude::*};
@@ -74,10 +73,10 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         },
         relay: relay::Handler {
             controller: controller.clone(),
-            discord: address.clone(),
+            _discord: address.clone(),
         },
         lfp: lfp::Handler {
-            discord: address.clone(),
+            _discord: address.clone(),
             config: config.clone(),
         },
     };
