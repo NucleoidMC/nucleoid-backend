@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use chrono::DateTime;
+use chrono::NaiveDate;
 use chrono::Utc;
-use chrono_tz::Tz;
 use clickhouse_rs::Pool;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -138,7 +138,7 @@ pub struct StatisticCounts<T> {
 
 #[derive(Serialize)]
 pub struct Datapoint {
-    pub date: DateTime<Tz>,
+    pub date: NaiveDate,
     pub value: u64,
 }
 

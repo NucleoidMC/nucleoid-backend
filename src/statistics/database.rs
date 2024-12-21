@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{row, Block, Pool};
 use tracing::warn;
@@ -407,7 +407,7 @@ impl StatisticDatabaseController {
         let rows = result.rows();
         let mut data = Vec::new();
         for row in rows {
-            let date: DateTime<Tz> = row.get("date")?;
+            let date: NaiveDate = row.get("date")?;
             let value: u64 = row.get("value")?;
             data.push(Datapoint { date, value });
         }
