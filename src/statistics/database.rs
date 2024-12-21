@@ -401,6 +401,48 @@ impl StatisticDatabaseController {
             GROUP BY date
             "#
             }
+            DataQueryType::GamesByYear => {
+                r#"
+            SELECT
+                toStartOfYear(DATE(date_played)) AS date,
+                COUNT(*) AS value
+            FROM games
+            GROUP BY date
+            "#
+            }
+            DataQueryType::PlayersByDay => {
+                r#"
+            SELECT
+                DATE(games.date_played) AS date,
+                COUNT(DISTINCT player_statistics.player_id) as value
+            FROM player_statistics
+            LEFT JOIN games
+                ON player_statistics.game_id = games.game_id
+            GROUP BY date
+            "#
+            }
+            DataQueryType::PlayersByMonth => {
+                r#"
+            SELECT
+                toStartOfMonth(DATE(games.date_played)) AS date,
+                COUNT(DISTINCT player_statistics.player_id) as value
+            FROM player_statistics
+            LEFT JOIN games
+                ON player_statistics.game_id = games.game_id
+            GROUP BY date
+            "#
+            }
+            DataQueryType::PlayersByYear => {
+                r#"
+            SELECT
+                toStartOfYear(DATE(games.date_played)) AS date,
+                COUNT(DISTINCT player_statistics.player_id) as value
+            FROM player_statistics
+            LEFT JOIN games
+                ON player_statistics.game_id = games.game_id
+            GROUP BY date
+            "#
+            }
         };
 
         let result = handle.query(query).fetch_all().await?;

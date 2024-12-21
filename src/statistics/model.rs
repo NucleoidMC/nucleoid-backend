@@ -147,4 +147,8 @@ pub struct Datapoint {
 pub enum DataQueryType {
     GamesByDay,
     GamesByMonth,
+    GamesByYear,
+    PlayersByDay,
+    PlayersByMonth,
+    PlayersByYear,
 }
