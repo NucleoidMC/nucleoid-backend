@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{row, Block, Pool};
-use log::warn;
+use tracing::warn;
 use nucleoid_leaderboards::model::LeaderboardDefinition;
 use uuid::Uuid;
 use xtra::{Actor, Address, Context, Handler};

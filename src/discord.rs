@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use serenity::all::{Cache, CreateEmbed, ExecuteWebhook, Http, Webhook};
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Message, Reaction};

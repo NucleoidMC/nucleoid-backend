@@ -49,13 +49,13 @@ fn load_leaderboards(config: &StatisticsConfig) -> Vec<LeaderboardDefinition> {
                 let file = match File::open(entry.path()) {
                     Ok(f) => f,
                     Err(e) => {
-                        log::error!("Failed to open {:?}: {}", entry.path(), e);
+                        tracing::error!("Failed to open {:?}: {}", entry.path(), e);
                         continue;
                     }
                 };
                 match serde_json::from_reader::<_, LeaderboardDefinition>(&file) {
                     Ok(definition) => leaderboards.push(definition),
-                    Err(e) => log::error!("Failed to parse {:?}: {}", entry.path(), e),
+                    Err(e) => tracing::error!("Failed to parse {:?}: {}", entry.path(), e),
                 }
             }
         }

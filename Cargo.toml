@@ -37,15 +37,14 @@ lazy_static = "1.4" # todo: replace with once_cell/the stdlib implementation
 serenity = { version = "0.12", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "http", "rustls_backend"] }
 async-trait = "0.1"
 
-xtra = { version = "0.6", features = ["macros", "sink", "tokio"] }
+xtra = { version = "0.6", features = ["instrumentation", "macros", "sink", "tokio"] }
 
 thiserror = "2"
 
-log = "0.4" # todo: replace with tracing
-env_logger = "0.11"
-
 walkdir = "2"
 nucleoid-leaderboards = { git = "https://github.com/NucleoidMC/nucleoid-leaderboards.git" }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing = "0.1.41"
 
 # The latest release on crates.io doesn't have support for serialising DateTime
 [dependencies.clickhouse-rs]

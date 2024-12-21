@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use deadpool_postgres::Pool;
-use log::error;
+use tracing::error;
 use xtra::prelude::*;
 
 use crate::controller::*;

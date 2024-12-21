@@ -324,7 +324,7 @@ fn handle_server_error<E>(e: &E) -> Box<dyn warp::Reply>
 where
     E: Error,
 {
-    log::warn!("error handling request: {}", e);
+    tracing::warn!("error handling request: {}", e);
     send_http_status(StatusCode::INTERNAL_SERVER_ERROR)
 }
 

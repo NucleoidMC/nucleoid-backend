@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use lazy_static::lazy_static;
-use log::error;
+use tracing::error;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serenity::all::{CreateAllowedMentions, CreateMessage, CreateWebhook, EditChannel};

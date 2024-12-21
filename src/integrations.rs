@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use bytes::Bytes;
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use log::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 
 use tokio::net::{TcpListener, TcpStream};
@@ -107,7 +107,7 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
         .expect("controller disconnected");
 
     if let Err(e) = stream.map(Ok).forward(client.into_sink()).await {
-        log::error!("error in integrations client: {e}");
+        error!("error in integrations client: {e}");
     }
 
     Ok(())
@@ -247,10 +247,10 @@ impl Handler<HandleIncomingMessage> for IntegrationsClient {
                     }
                     UploadStatistics { bundle, game_id } => {
                         if let Some(global) = &bundle.stats.global {
-                            log::debug!("server '{}' uploaded {} player statistics and {} global statistics in statistics bundle for {}",
+                            debug!("server '{}' uploaded {} player statistics and {} global statistics in statistics bundle for {}",
                                 self.channel, bundle.stats.players.len(), global.len(), bundle.namespace);
                         } else {
-                            log::debug!("server '{}' uploaded {} player statistics in statistics bundle for {}",
+                            debug!("server '{}' uploaded {} player statistics in statistics bundle for {}",
                                 self.channel, bundle.stats.players.len(), bundle.namespace);
                         }
                         let upload_bundle_message = UploadStatsBundle {

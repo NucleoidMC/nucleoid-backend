@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime};
 
-use log::error;
+use tracing::error;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::all::{CreateAllowedMentions, CreateWebhook};
