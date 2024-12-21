@@ -415,8 +415,8 @@ impl StatisticDatabaseController {
         Ok(data)
     }
 
-    async fn wrapped_data(&self, player_id: &Uuid) -> StatisticsDatabaseResult<PlayerWrappedData> {
-        let result = self.wrapped.build_wrapped(player_id).await?;
+    async fn wrapped_data(&self, player_id: Uuid, year: u16) -> StatisticsDatabaseResult<PlayerWrappedData> {
+        let result = self.wrapped.build_wrapped(player_id, year).await?;
         Ok(result)
     }
 }
@@ -549,13 +549,16 @@ impl Handler<DataQuery> for StatisticDatabaseController {
     }
 }
 
-pub struct WrappedData(pub Uuid);
+pub struct WrappedData {
+    pub player_id: Uuid,
+    pub year: u16,
+}
 
 impl Handler<WrappedData> for StatisticDatabaseController {
     type Return = StatisticsDatabaseResult<PlayerWrappedData>;
 
     async fn handle(&mut self, message: WrappedData, _ctx: &mut Context<Self>) -> Self::Return {
-        self.wrapped_data(&message.0).await
+        self.wrapped_data(message.player_id, message.year).await
     }
 }
 
@@ -567,6 +570,8 @@ pub enum StatisticsDatabaseError {
     Postgres(#[from] tokio_postgres::Error),
     #[error("a database pool error occurred: {0}")]
     Pool(#[from] deadpool_postgres::PoolError),
+    #[error("nucleoid wrapped is not available for this year")]
+    UnWrappedYear,
     #[error("unknown error")]
     Unknown,
 }

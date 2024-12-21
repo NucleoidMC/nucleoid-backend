@@ -121,9 +121,10 @@ pub async fn run(controller: Address<Controller>, config: WebServerConfig) {
     let nucleoid_wrapped = warp::path("player")
         .and(warp::path::param::<Uuid>())
         .and(warp::path("wrapped"))
+        .and(warp::query())
         .and_then({
             let controller = controller.clone();
-            move |id| nucleoid_wrapped(controller.clone(), id)
+            move |id, query: WrappedQuery| nucleoid_wrapped(controller.clone(), id, query.year)
         })
         .with(&cors);
 
@@ -263,10 +264,13 @@ async fn get_player_username(mojang_client: Address<MojangApiClient>, id: Uuid) 
     handle_option_result(profile)
 }
 
-async fn nucleoid_wrapped(controller: Address<Controller>, player_id: Uuid) -> ApiResult {
+async fn nucleoid_wrapped(controller: Address<Controller>, player_id: Uuid, year: Option<u16>) -> ApiResult {
     let statistics = get_statistics_controller(controller).await?;
     let res = statistics
-        .send(WrappedData(player_id))
+        .send(WrappedData {
+            player_id,
+            year: year.unwrap_or(2023),
+        })
         .await
         .expect("controller disconnected");
     handle_result(res)
@@ -281,6 +285,11 @@ struct RecentGamesQuery {
 #[derive(Deserialize)]
 struct DataQueryQuery {
     query: DataQueryType,
+}
+
+#[derive(Deserialize)]
+struct WrappedQuery {
+    year: Option<u16>,
 }
 
 async fn get_statistics_controller(
