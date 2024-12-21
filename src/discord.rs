@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tracing::{error, info, warn};
 use serenity::all::{Cache, CreateEmbed, ExecuteWebhook, Http, Webhook};
 use serenity::client::Context as SerenityContext;
 use serenity::model::channel::{Message, Reaction};
 use serenity::{async_trait, prelude::*};
+use tracing::{error, info, warn};
 use xtra::prelude::*;
 use xtra::Context as XtraContext;
 
@@ -73,10 +73,8 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         },
         relay: relay::Handler {
             controller: controller.clone(),
-            _discord: address.clone(),
         },
         lfp: lfp::Handler {
-            _discord: address.clone(),
             config: config.clone(),
         },
     };
@@ -211,14 +209,14 @@ impl Handler<ReportError> for DiscordClient {
                 let embed = CreateEmbed::new()
                     .title(message.title)
                     .description(message.description)
-                    .fields(if let Some(fields) = message.fields {
-                        fields
-                            .iter()
+                    .fields(
+                        message
+                            .fields
+                            .into_iter()
+                            .flatten()
                             .map(|(name, value)| (name.clone(), value.clone(), false))
-                            .collect::<Vec<_>>()
-                    } else {
-                        vec![]
-                    });
+                            .collect::<Vec<_>>(),
+                    );
 
                 let res = webhook
                     .execute(

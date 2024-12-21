@@ -122,7 +122,6 @@ struct Registration {
 }
 
 pub struct Handler {
-    pub _discord: Address<DiscordClient>,
     pub config: DiscordConfig,
 }
 

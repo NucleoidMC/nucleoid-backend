@@ -161,7 +161,6 @@ pub async fn update_status(discord: &mut DiscordClient, update_relay: UpdateRela
 
 pub struct Handler {
     pub controller: Address<Controller>,
-    pub _discord: Address<DiscordClient>,
 }
 
 impl Handler {
