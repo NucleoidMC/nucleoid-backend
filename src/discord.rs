@@ -1,38 +1,56 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use log::{error, info, warn};
-use serde_json::json;
+use serenity::all::{Cache, CreateEmbed, ExecuteWebhook, Http, Webhook};
 use serenity::client::Context as SerenityContext;
-use serenity::model::channel::{Embed, Message as SerenityMessage, Reaction};
-use serenity::prelude::*;
-use serenity::CacheAndHttp;
+use serenity::model::channel::{Message, Reaction};
+use serenity::{async_trait, prelude::*};
+use tracing::{error, info, warn};
 use xtra::prelude::*;
 use xtra::Context as XtraContext;
-use xtra::KeepRunning;
-use xtra::Message as XtraMessage;
 
 use crate::controller::*;
 use crate::model::*;
-use crate::{DiscordConfig, Persistent, TokioGlobal};
+use crate::{DiscordConfig, Persistent};
 
 mod lfp;
 mod pings;
 mod relay;
 
+#[derive(Clone)]
+struct CacheAndHttp {
+    http: Arc<Http>,
+    cache: Arc<Cache>,
+}
+
+impl CacheHttp for CacheAndHttp {
+    fn http(&self) -> &Http {
+        &self.http
+    }
+
+    fn cache(&self) -> Option<&Arc<Cache>> {
+        Some(&self.cache)
+    }
+}
+
+impl AsRef<Http> for CacheAndHttp {
+    fn as_ref(&self) -> &Http {
+        &self.http
+    }
+}
+
 pub struct DiscordClient {
     controller: Address<Controller>,
     config: DiscordConfig,
-    cache_and_http: Option<Arc<CacheAndHttp>>,
+    cache_and_http: Option<CacheAndHttp>,
     data: Option<Arc<RwLock<TypeMap>>>,
 }
 
-#[async_trait]
 impl Actor for DiscordClient {
-    async fn stopping(&mut self, _ctx: &mut XtraContext<Self>) -> KeepRunning {
-        let _ = self.controller.do_send_async(UnregisterDiscordClient).await;
-        KeepRunning::StopAll
+    type Stop = ();
+
+    async fn stopped(self) {
+        let _ = self.controller.send(UnregisterDiscordClient).await;
     }
 }
 
@@ -47,7 +65,7 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         cache_and_http: None,
         data: None,
     };
-    let address = actor.create(None).spawn(&mut TokioGlobal);
+    let address = xtra::spawn_tokio(actor, Mailbox::unbounded());
 
     let handler = DiscordHandler {
         pings: pings::Handler {
@@ -55,10 +73,8 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         },
         relay: relay::Handler {
             controller: controller.clone(),
-            discord: address.clone(),
         },
         lfp: lfp::Handler {
-            discord: address.clone(),
             config: config.clone(),
         },
     };
@@ -81,15 +97,18 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
     }
 
     address
-        .do_send_async(Init {
-            cache_and_http: client.cache_and_http.clone(),
+        .send(Init {
+            cache_and_http: CacheAndHttp {
+                cache: client.cache.clone(),
+                http: client.http.clone(),
+            },
             data: client.data.clone(),
         })
         .await
         .expect("client disconnected");
 
     controller
-        .do_send_async(RegisterDiscordClient { client: address })
+        .send(RegisterDiscordClient { client: address })
         .await
         .expect("controller disconnected");
 
@@ -97,12 +116,8 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
 }
 
 struct Init {
-    cache_and_http: Arc<CacheAndHttp>,
+    cache_and_http: CacheAndHttp,
     data: Arc<RwLock<TypeMap>>,
-}
-
-impl XtraMessage for Init {
-    type Result = ();
 }
 
 pub struct SendChat {
@@ -111,17 +126,9 @@ pub struct SendChat {
     pub content: String,
 }
 
-impl XtraMessage for SendChat {
-    type Result = ();
-}
-
 pub struct SendSystem {
     pub channel: String,
     pub content: String,
-}
-
-impl XtraMessage for SendSystem {
-    type Result = ();
 }
 
 pub struct SendPing {
@@ -131,19 +138,11 @@ pub struct SendPing {
     pub content: String,
 }
 
-impl XtraMessage for SendPing {
-    type Result = ();
-}
-
 pub struct UpdateRelayStatus {
     pub channel: String,
     pub game_version: String,
     pub server_ip: Option<String>,
     pub player_count: usize,
-}
-
-impl XtraMessage for UpdateRelayStatus {
-    type Result = ();
 }
 
 pub struct ReportError {
@@ -152,76 +151,84 @@ pub struct ReportError {
     pub fields: Option<HashMap<String, String>>,
 }
 
-impl XtraMessage for ReportError {
-    type Result = ();
-}
-
-#[async_trait]
 impl Handler<Init> for DiscordClient {
+    type Return = ();
+
     async fn handle(&mut self, message: Init, _ctx: &mut XtraContext<Self>) {
         self.cache_and_http = Some(message.cache_and_http);
         self.data = Some(message.data);
     }
 }
 
-#[async_trait]
 impl Handler<SendChat> for DiscordClient {
+    type Return = ();
+
     async fn handle(&mut self, send_chat: SendChat, _ctx: &mut XtraContext<Self>) {
         relay::send_chat(self, send_chat).await
     }
 }
 
-#[async_trait]
 impl Handler<SendSystem> for DiscordClient {
+    type Return = ();
+
     async fn handle(&mut self, send_system: SendSystem, _ctx: &mut XtraContext<Self>) {
         relay::send_system(self, send_system).await
     }
 }
 
-#[async_trait]
 impl Handler<SendPing> for DiscordClient {
+    type Return = ();
+
     async fn handle(&mut self, send_ping: SendPing, _ctx: &mut XtraContext<Self>) {
         pings::send(self, send_ping).await
     }
 }
 
-#[async_trait]
 impl Handler<UpdateRelayStatus> for DiscordClient {
+    type Return = ();
+
     async fn handle(&mut self, update_relay: UpdateRelayStatus, _ctx: &mut XtraContext<Self>) {
         relay::update_status(self, update_relay).await
     }
 }
 
-#[async_trait]
 impl Handler<ReportError> for DiscordClient {
+    type Return = ();
+
     async fn handle(&mut self, message: ReportError, _ctx: &mut XtraContext<Self>) {
         if let (Some(cache_and_http), Some(webhook_config)) =
             (&self.cache_and_http, &self.config.error_webhook)
         {
-            if let Ok(webhook) = &cache_and_http
-                .http
-                .get_webhook_with_token(webhook_config.id, &webhook_config.token)
-                .await
+            if let Ok(webhook) = Webhook::from_id_with_token(
+                cache_and_http,
+                webhook_config.id,
+                &webhook_config.token,
+            )
+            .await
             {
-                let embed = Embed::fake(|e| {
-                    e.title(message.title);
-                    e.description(message.description);
-                    if let Some(fields) = message.fields {
-                        for (name, value) in fields {
-                            e.field(name, value, false);
-                        }
-                    }
-                    e
-                });
+                let embed = CreateEmbed::new()
+                    .title(message.title)
+                    .description(message.description)
+                    .fields(
+                        message
+                            .fields
+                            .into_iter()
+                            .flatten()
+                            .map(|(name, value)| (name.clone(), value.clone(), false))
+                            .collect::<Vec<_>>(),
+                    );
 
-                if let Err(e) = webhook
-                    .execute(&cache_and_http.http, false, |w| {
-                        w.embeds(vec![embed]);
-                        w.username("Backend error reporting");
-                        w
-                    })
-                    .await
-                {
+                let res = webhook
+                    .execute(
+                        &cache_and_http,
+                        false,
+                        ExecuteWebhook::new()
+                            .username("Backend Error Reporting")
+                            .embed(embed),
+                    )
+                    .await;
+
+                if let Err(e) = res {
                     warn!("Failed to report error to discord: {}", e);
                 }
             } else {
@@ -238,12 +245,7 @@ struct DiscordHandler {
 }
 
 impl DiscordHandler {
-    async fn handle_command(
-        &self,
-        tokens: &[&str],
-        ctx: &SerenityContext,
-        message: &SerenityMessage,
-    ) {
+    async fn handle_command(&self, tokens: &[&str], ctx: &SerenityContext, message: &Message) {
         let admin = check_message_admin(ctx, message).await;
 
         let result = match tokens {
@@ -273,14 +275,14 @@ impl DiscordHandler {
         let _ = message.react(&ctx, reaction).await;
 
         if let Err(err) = result {
-            let _ = message.reply(&ctx, err).await;
+            let _ = message.reply(&ctx, err.to_string()).await;
         }
     }
 }
 
 #[async_trait]
 impl EventHandler for DiscordHandler {
-    async fn message(&self, ctx: SerenityContext, message: SerenityMessage) {
+    async fn message(&self, ctx: SerenityContext, message: Message) {
         if !message.author.bot {
             if let Ok(true) = message.mentions_me(&ctx).await {
                 let tokens: Vec<&str> = message.content.split_ascii_whitespace().collect();
@@ -306,9 +308,10 @@ impl EventHandler for DiscordHandler {
     }
 }
 
-async fn check_message_admin(ctx: &SerenityContext, message: &SerenityMessage) -> bool {
-    if let Ok(member) = message.member(&ctx).await {
-        if let Ok(permissions) = member.permissions(ctx) {
+async fn check_message_admin(ctx: &SerenityContext, message: &Message) -> bool {
+    if let (Ok(channel), Ok(member)) = (message.channel(ctx).await, message.member(&ctx).await) {
+        if let Some(guild) = message.guild(&ctx.cache) {
+            let permissions = guild.user_permissions_in(&channel.guild().unwrap(), &member);
             return permissions.administrator();
         }
     }

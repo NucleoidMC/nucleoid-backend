@@ -21,7 +21,7 @@ impl LeaderboardGenerator {
 
         for definition in definitions {
             if definitions_map.contains_key(&definition.id) {
-                log::warn!("Duplicate leaderboard definition for {}", definition.id);
+                tracing::warn!("Duplicate leaderboard definition for {}", definition.id);
             }
             let sql = build_sql(&definition);
             definitions_map.insert(definition.id.clone(), (definition, sql));

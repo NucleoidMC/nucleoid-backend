@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use clickhouse_rs::{row, Block, Pool};
-use log::warn;
+use tracing::warn;
 use nucleoid_leaderboards::model::LeaderboardDefinition;
 use uuid::Uuid;
-use xtra::{Actor, Address, Context, Handler, Message};
+use xtra::{Actor, Address, Context, Handler};
 
 use crate::statistics::leaderboards::database::LeaderboardsDatabase;
 use crate::statistics::leaderboards::LeaderboardEntry;
@@ -19,6 +18,7 @@ use crate::{Controller, StatisticsConfig};
 
 use super::wrapped::{NucleoidWrapped, PlayerWrappedData};
 
+#[derive(Actor)]
 pub struct StatisticDatabaseController {
     _controller: Address<Controller>,
     pool: Pool,
@@ -407,7 +407,7 @@ impl StatisticDatabaseController {
         let rows = result.rows();
         let mut data = Vec::new();
         for row in rows {
-            let date: DateTime<Tz> = row.get("date")?;
+            let date: NaiveDate = row.get("date")?;
             let value: u64 = row.get("value")?;
             data.push(Datapoint { date, value });
         }
@@ -421,24 +421,15 @@ impl StatisticDatabaseController {
     }
 }
 
-impl Actor for StatisticDatabaseController {}
-
 pub struct GetPlayerStats {
     pub uuid: Uuid,
     pub namespace: Option<String>,
 }
 
-impl Message for GetPlayerStats {
-    type Result = StatisticsDatabaseResult<Option<PlayerStatsResponse>>;
-}
-
-#[async_trait]
 impl Handler<GetPlayerStats> for StatisticDatabaseController {
-    async fn handle(
-        &mut self,
-        message: GetPlayerStats,
-        _ctx: &mut Context<Self>,
-    ) -> <GetPlayerStats as Message>::Result {
+    type Return = StatisticsDatabaseResult<Option<PlayerStatsResponse>>;
+
+    async fn handle(&mut self, message: GetPlayerStats, _ctx: &mut Context<Self>) -> Self::Return {
         self.get_player_stats(&message.uuid, &message.namespace)
             .await
     }
@@ -446,17 +437,10 @@ impl Handler<GetPlayerStats> for StatisticDatabaseController {
 
 pub struct GetGameStats(pub Uuid);
 
-impl Message for GetGameStats {
-    type Result = StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>>;
-}
-
-#[async_trait]
 impl Handler<GetGameStats> for StatisticDatabaseController {
-    async fn handle(
-        &mut self,
-        message: GetGameStats,
-        _ctx: &mut Context<Self>,
-    ) -> <GetGameStats as Message>::Result {
+    type Return = StatisticsDatabaseResult<Option<HashMap<Uuid, PlayerStatsResponse>>>;
+
+    async fn handle(&mut self, message: GetGameStats, _ctx: &mut Context<Self>) -> Self::Return {
         self.get_game_stats(&message.0).await
     }
 }
@@ -466,17 +450,10 @@ pub struct GetRecentGames {
     pub player_id: Option<Uuid>,
 }
 
-impl Message for GetRecentGames {
-    type Result = StatisticsDatabaseResult<Vec<RecentGame>>;
-}
-
-#[async_trait]
 impl Handler<GetRecentGames> for StatisticDatabaseController {
-    async fn handle(
-        &mut self,
-        message: GetRecentGames,
-        _ctx: &mut Context<Self>,
-    ) -> <GetRecentGames as Message>::Result {
+    type Return = StatisticsDatabaseResult<Vec<RecentGame>>;
+
+    async fn handle(&mut self, message: GetRecentGames, _ctx: &mut Context<Self>) -> Self::Return {
         self.get_recent_games(message.limit, message.player_id)
             .await
     }
@@ -489,17 +466,14 @@ pub struct UploadStatsBundle {
     pub bundle: GameStatsBundle,
 }
 
-impl Message for UploadStatsBundle {
-    type Result = ();
-}
-
-#[async_trait]
 impl Handler<UploadStatsBundle> for StatisticDatabaseController {
+    type Return = ();
+
     async fn handle(
         &mut self,
         message: UploadStatsBundle,
         _ctx: &mut Context<Self>,
-    ) -> <UploadStatsBundle as Message>::Result {
+    ) -> Self::Return {
         if let Err(e) = self
             .upload_stats_bundle(
                 message.game_id,
@@ -515,102 +489,72 @@ impl Handler<UploadStatsBundle> for StatisticDatabaseController {
 
 pub struct GetStatisticsStats;
 
-impl Message for GetStatisticsStats {
-    type Result = StatisticsDatabaseResult<StatisticsStats>;
-}
-
-#[async_trait]
 impl Handler<GetStatisticsStats> for StatisticDatabaseController {
+    type Return = StatisticsDatabaseResult<StatisticsStats>;
+
     async fn handle(
         &mut self,
         _message: GetStatisticsStats,
         _ctx: &mut Context<Self>,
-    ) -> <GetStatisticsStats as Message>::Result {
+    ) -> Self::Return {
         self.get_statistics_stats().await
     }
 }
 
 pub struct GetLeaderboard(pub String);
 
-impl Message for GetLeaderboard {
-    type Result = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
-}
-
-#[async_trait]
 impl Handler<GetLeaderboard> for StatisticDatabaseController {
-    async fn handle(
-        &mut self,
-        message: GetLeaderboard,
-        _ctx: &mut Context<Self>,
-    ) -> <GetLeaderboard as Message>::Result {
+    type Return = StatisticsDatabaseResult<Option<Vec<LeaderboardEntry>>>;
+
+    async fn handle(&mut self, message: GetLeaderboard, _ctx: &mut Context<Self>) -> Self::Return {
         self.leaderboards.get_leaderboard(&message.0).await
     }
 }
 
 pub struct GetAllLeaderboards;
 
-impl Message for GetAllLeaderboards {
-    type Result = Vec<String>;
-}
-
-#[async_trait]
 impl Handler<GetAllLeaderboards> for StatisticDatabaseController {
+    type Return = Vec<String>;
+
     async fn handle(
         &mut self,
         _message: GetAllLeaderboards,
         _ctx: &mut Context<Self>,
-    ) -> <GetAllLeaderboards as Message>::Result {
+    ) -> Self::Return {
         self.leaderboards.list_all_leaderboards()
     }
 }
 
 pub struct GetPlayerRankings(pub Uuid);
 
-impl Message for GetPlayerRankings {
-    type Result = StatisticsDatabaseResult<Option<HashMap<String, (i64, f64)>>>;
-}
-
-#[async_trait]
 impl Handler<GetPlayerRankings> for StatisticDatabaseController {
+    type Return = StatisticsDatabaseResult<Option<HashMap<String, (i64, f64)>>>;
+
     async fn handle(
         &mut self,
         message: GetPlayerRankings,
         _ctx: &mut Context<Self>,
-    ) -> <GetPlayerRankings as Message>::Result {
+    ) -> Self::Return {
         self.leaderboards.get_player_rankings(&message.0).await
     }
 }
 
 pub struct DataQuery(pub DataQueryType);
 
-impl Message for DataQuery {
-    type Result = StatisticsDatabaseResult<Vec<Datapoint>>;
-}
-
-#[async_trait]
 impl Handler<DataQuery> for StatisticDatabaseController {
-    async fn handle(
-        &mut self,
-        message: DataQuery,
-        _ctx: &mut Context<Self>,
-    ) -> <DataQuery as Message>::Result {
+    type Return = StatisticsDatabaseResult<Vec<Datapoint>>;
+
+    async fn handle(&mut self, message: DataQuery, _ctx: &mut Context<Self>) -> Self::Return {
         self.data_query(message.0).await
     }
 }
 
 pub struct WrappedData(pub Uuid);
 
-impl Message for WrappedData {
-    type Result = StatisticsDatabaseResult<PlayerWrappedData>;
-}
-
-#[async_trait]
 impl Handler<WrappedData> for StatisticDatabaseController {
-    async fn handle(
-        &mut self,
-        message: WrappedData,
-        _ctx: &mut Context<Self>,
-    ) -> <WrappedData as Message>::Result {
+    type Return = StatisticsDatabaseResult<PlayerWrappedData>;
+
+    async fn handle(&mut self, message: WrappedData, _ctx: &mut Context<Self>) -> Self::Return {
         self.wrapped_data(&message.0).await
     }
 }

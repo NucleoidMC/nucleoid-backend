@@ -2,10 +2,10 @@ use std::fs::File;
 
 use nucleoid_leaderboards::model::LeaderboardDefinition;
 use walkdir::WalkDir;
-use xtra::{Actor, Address};
+use xtra::{Address, Mailbox};
 
 use crate::statistics::database::StatisticDatabaseController;
-use crate::{Controller, RegisterStatisticsDatabaseController, StatisticsConfig, TokioGlobal};
+use crate::{Controller, RegisterStatisticsDatabaseController, StatisticsConfig};
 
 pub mod database;
 pub mod leaderboards;
@@ -24,12 +24,12 @@ pub async fn run(
         load_leaderboards(&config),
     )
     .await
-    .expect("failed to connect to statistics database")
-    .create(None)
-    .spawn(&mut TokioGlobal);
+    .expect("failed to connect to statistics database");
+
+    let statistics_database = xtra::spawn_tokio(statistics_database, Mailbox::unbounded());
 
     controller
-        .do_send_async(RegisterStatisticsDatabaseController {
+        .send(RegisterStatisticsDatabaseController {
             controller: statistics_database,
         })
         .await
@@ -49,13 +49,13 @@ fn load_leaderboards(config: &StatisticsConfig) -> Vec<LeaderboardDefinition> {
                 let file = match File::open(entry.path()) {
                     Ok(f) => f,
                     Err(e) => {
-                        log::error!("Failed to open {:?}: {}", entry.path(), e);
+                        tracing::error!("Failed to open {:?}: {}", entry.path(), e);
                         continue;
                     }
                 };
                 match serde_json::from_reader::<_, LeaderboardDefinition>(&file) {
                     Ok(definition) => leaderboards.push(definition),
-                    Err(e) => log::error!("Failed to parse {:?}: {}", entry.path(), e),
+                    Err(e) => tracing::error!("Failed to parse {:?}: {}", entry.path(), e),
                 }
             }
         }

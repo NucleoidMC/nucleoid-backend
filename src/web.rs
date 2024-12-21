@@ -169,10 +169,7 @@ async fn get_player_stats(
 
     if let Some(namespace) = &namespace {
         for c in namespace.chars() {
-            if !(('a'..='z').contains(&c)
-                || ('A'..='Z').contains(&c)
-                || ('0'..='9').contains(&c)
-                || c == '_')
+            if !(c.is_ascii_lowercase() || c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
             {
                 return Ok(send_http_status(StatusCode::BAD_REQUEST));
             }
@@ -327,7 +324,7 @@ fn handle_server_error<E>(e: &E) -> Box<dyn warp::Reply>
 where
     E: Error,
 {
-    log::warn!("error handling request: {}", e);
+    tracing::warn!("error handling request: {}", e);
     send_http_status(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
