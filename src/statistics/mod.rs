@@ -26,7 +26,11 @@ pub async fn run(
     .await
     .expect("failed to connect to statistics database");
 
-    let statistics_database = xtra::spawn_tokio(statistics_database, Mailbox::unbounded());
+    let statistics_database = crate::spawn_tokio_named(
+        "statistics_database_actor",
+        statistics_database,
+        Mailbox::unbounded(),
+    );
 
     controller
         .send(RegisterStatisticsDatabaseController {

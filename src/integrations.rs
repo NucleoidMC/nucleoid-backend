@@ -3,8 +3,8 @@ use std::pin::Pin;
 
 use bytes::Bytes;
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use tracing::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, warn};
 
 use tokio::net::{TcpListener, TcpStream};
 use xtra::prelude::*;
@@ -33,12 +33,15 @@ pub async fn run(controller: Address<Controller>, config: IntegrationsConfig) {
         info!("accepting integrations connection from {:?}", addr);
 
         let controller = controller.clone();
-        tokio::spawn(async move {
-            match run_client(controller, stream).await {
-                Ok(_) => error!("integrations client disconnected"),
-                Err(e) => error!("client exited with error: {:?}", e),
-            }
-        });
+        tokio::task::Builder::new()
+            .name(&format!("integrations_client_{:?}", addr))
+            .spawn(async move {
+                match run_client(controller, stream).await {
+                    Ok(_) => error!("integrations client disconnected"),
+                    Err(e) => error!("client exited with error: {:?}", e),
+                }
+            })
+            .unwrap();
     }
 }
 
@@ -94,7 +97,11 @@ async fn run_client(controller: Address<Controller>, stream: TcpStream) -> Resul
         server_type,
     };
 
-    let client = xtra::spawn_tokio(client, Mailbox::unbounded());
+    let client = crate::spawn_tokio_named(
+        &format!("integrations_client_{channel}"),
+        client,
+        Mailbox::unbounded(),
+    );
 
     controller
         .send(RegisterIntegrationsClient {

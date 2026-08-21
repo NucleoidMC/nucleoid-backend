@@ -25,19 +25,23 @@ impl MojangApiClient {
             username_cache,
         };
 
-        let client = xtra::spawn_tokio(client, Mailbox::unbounded());
+        let client =
+            crate::spawn_tokio_named("mojang_api_client_actor", client, Mailbox::unbounded());
 
         let client_weak = client.downgrade();
         // Based on https://github.com/NucleoidMC/player-face-api/blob/main/src/api.rs#L52-L63
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(CACHE_CLEAR_INTERVAL);
-            loop {
-                interval.tick().await;
-                if client_weak.send(ClearCache).await.is_err() {
-                    break;
+        tokio::task::Builder::new()
+            .name("mojang_api_cache_clear")
+            .spawn(async move {
+                let mut interval = tokio::time::interval(CACHE_CLEAR_INTERVAL);
+                loop {
+                    interval.tick().await;
+                    if client_weak.send(ClearCache).await.is_err() {
+                        break;
+                    }
                 }
-            }
-        });
+            })
+            .unwrap();
 
         Ok(client)
     }

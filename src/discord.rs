@@ -65,7 +65,7 @@ pub async fn run(controller: Address<Controller>, config: DiscordConfig) {
         cache_and_http: None,
         data: None,
     };
-    let address = xtra::spawn_tokio(actor, Mailbox::unbounded());
+    let address = crate::spawn_tokio_named("discord_actor", actor, Mailbox::unbounded());
 
     let handler = DiscordHandler {
         pings: pings::Handler {

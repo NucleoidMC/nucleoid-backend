@@ -19,50 +19,97 @@ mod persistent;
 mod statistics;
 mod web;
 
+pub fn spawn_tokio_named<A>(
+    name: &str,
+    actor: A,
+    (address, mailbox): (crate::Address<A>, crate::Mailbox<A>),
+) -> crate::Address<A>
+where
+    A: crate::Actor<Stop = ()>,
+{
+    tokio::task::Builder::new()
+        .name(name)
+        .spawn(xtra::run(mailbox, actor))
+        .unwrap();
+
+    address
+}
+
 #[tokio::main]
 async fn main() {
+    let console_layer = console_subscriber::spawn();
     tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "debug,serenity=info,rustls=info,h2=info,hyper=info".into()),
+        .with(console_layer)
+        .with(tracing_subscriber::fmt::layer().with_filter(
+            tracing_subscriber::filter::EnvFilter::new(
+                std::env::var("RUST_LOG").unwrap_or_else(|_| {
+                    "debug,serenity=info,rustls=info,h2=info,hyper=info".into()
+                }),
+            ),
         ))
-        .with(tracing_subscriber::fmt::layer())
         .init();
 
     let config = config::load();
-    let controller = xtra::spawn_tokio(Controller::new(config.clone()).await, Mailbox::unbounded());
+    let controller = spawn_tokio_named(
+        "controller_actor",
+        Controller::new(config.clone()).await,
+        Mailbox::unbounded(),
+    );
 
     let mut futures = Vec::with_capacity(5);
 
     if let Some(integrations) = config.integrations {
-        futures.push(tokio::spawn(integrations::run(
-            controller.clone(),
-            integrations,
-        )));
+        futures.push(
+            tokio::task::Builder::new()
+                .name("integrations")
+                .spawn(integrations::run(controller.clone(), integrations))
+                .unwrap(),
+        );
     }
 
     if let Some(web) = config.web_server {
-        futures.push(tokio::spawn(web::run(controller.clone(), web)));
+        futures.push(
+            tokio::task::Builder::new()
+                .name("web_server")
+                .spawn(web::run(controller.clone(), web))
+                .unwrap(),
+        );
     }
 
     if let Some(discord) = config.discord {
-        futures.push(tokio::spawn(discord::run(controller.clone(), discord)));
+        futures.push(
+            tokio::task::Builder::new()
+                .name("discord")
+                .spawn(discord::run(controller.clone(), discord))
+                .unwrap(),
+        );
     }
 
     if let Some(database) = config.database {
         let postgres_pool = setup_postgres(database.clone()).await;
 
-        futures.push(tokio::spawn(database::run(
-            controller.clone(),
-            postgres_pool.clone(),
-            database,
-        )));
+        futures.push(
+            tokio::task::Builder::new()
+                .name("database")
+                .spawn(database::run(
+                    controller.clone(),
+                    postgres_pool.clone(),
+                    database,
+                ))
+                .unwrap(),
+        );
 
         if let Some(statistics) = config.statistics {
-            futures.push(tokio::spawn(statistics::run(
-                controller.clone(),
-                statistics,
-                postgres_pool,
-            )));
+            futures.push(
+                tokio::task::Builder::new()
+                    .name("statistics")
+                    .spawn(statistics::run(
+                        controller.clone(),
+                        statistics,
+                        postgres_pool,
+                    ))
+                    .unwrap(),
+            );
         }
     }
 

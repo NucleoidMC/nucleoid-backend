@@ -15,7 +15,7 @@ pub async fn run(controller: Address<Controller>, pool: Pool, config: DatabaseCo
         _config: config,
         channels: HashMap::new(),
     };
-    let database = xtra::spawn_tokio(database, Mailbox::unbounded());
+    let database = crate::spawn_tokio_named("database_actor", database, Mailbox::unbounded());
 
     controller
         .send(RegisterDatabaseClient { client: database })

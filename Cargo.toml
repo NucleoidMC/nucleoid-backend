@@ -45,6 +45,7 @@ walkdir = "2"
 nucleoid-leaderboards = { git = "https://github.com/NucleoidMC/nucleoid-leaderboards.git" }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing = "0.1.41"
+console-subscriber = "0.5.0"
 
 # The latest release on crates.io doesn't have support for serialising DateTime
 [dependencies.clickhouse-rs]
