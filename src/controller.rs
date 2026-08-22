@@ -34,6 +34,7 @@ impl Controller {
     }
 }
 
+#[derive(Debug)]
 pub struct RegisterIntegrationsClient {
     pub channel: String,
     pub game_version: String,
@@ -41,37 +42,45 @@ pub struct RegisterIntegrationsClient {
     pub client: Address<IntegrationsClient>,
 }
 
+#[derive(Debug)]
 pub struct UnregisterIntegrationsClient {
     pub channel: String,
 }
 
+#[derive(Debug)]
 pub struct RegisterDiscordClient {
     pub client: Address<DiscordClient>,
 }
 
 pub struct UnregisterDiscordClient;
 
+#[derive(Debug)]
 pub struct RegisterDatabaseClient {
     pub client: Address<DatabaseClient>,
 }
 
+#[derive(Debug)]
 pub struct RegisterStatisticsDatabaseController {
     pub controller: Address<StatisticDatabaseController>,
 }
 
+#[derive(Debug)]
 pub struct GetStatisticsDatabaseController;
 
+#[derive(Debug)]
 pub struct IncomingChat {
     pub channel: String,
     pub sender: Player,
     pub content: String,
 }
 
+#[derive(Debug)]
 pub struct OutgoingChat {
     pub channel: String,
     pub chat: ChatMessage,
 }
 
+#[derive(Debug)]
 pub struct OutgoingCommand {
     pub channel: String,
     pub sender: String,
@@ -80,6 +89,7 @@ pub struct OutgoingCommand {
     pub silent: bool,
 }
 
+#[derive(Debug)]
 pub struct OutgoingServerChange {
     // This should always be sent to a proxy, never a regular server.
     pub channel: String,
@@ -87,35 +97,42 @@ pub struct OutgoingServerChange {
     pub target_server: String,
 }
 
+#[derive(Debug)]
 pub struct StatusUpdate {
     pub channel: String,
     pub games: Option<Vec<Game>>,
     pub players: Option<Vec<Player>>,
 }
 
+#[derive(Debug)]
 pub struct PerformanceUpdate {
     pub channel: String,
     pub performance: ServerPerformance,
 }
 
+#[derive(Debug)]
 pub struct ServerLifecycleStart {
     pub channel: String,
     pub server_type: ServerType,
 }
 
+#[derive(Debug)]
 pub struct ServerLifecycleStop {
     pub channel: String,
     pub crash: bool,
     pub server_type: ServerType,
 }
 
+#[derive(Debug)]
 pub struct ServerSystemMessage {
     pub channel: String,
     pub content: String,
 }
 
+#[derive(Debug)]
 pub struct GetStatus(pub String);
 
+#[derive(Debug)]
 pub struct BackendError {
     pub title: String,
     pub description: String,
@@ -125,7 +142,9 @@ pub struct BackendError {
 impl Handler<RegisterIntegrationsClient> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: RegisterIntegrationsClient, _ctx: &mut Context<Self>) {
+        tracing::info!(channel = message.channel, "Register integrations client");
         self.integration_clients
             .insert(message.channel.clone(), message.client);
 
@@ -138,7 +157,9 @@ impl Handler<RegisterIntegrationsClient> for Controller {
 impl Handler<UnregisterIntegrationsClient> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: UnregisterIntegrationsClient, _ctx: &mut Context<Self>) {
+        tracing::info!(channel = message.channel, "Unregister integrations client");
         self.integration_clients.remove(&message.channel);
     }
 }
@@ -146,7 +167,9 @@ impl Handler<UnregisterIntegrationsClient> for Controller {
 impl Handler<RegisterDiscordClient> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: RegisterDiscordClient, _ctx: &mut Context<Self>) {
+        tracing::debug!("Register discord client");
         self.discord = Some(message.client);
     }
 }
@@ -154,7 +177,9 @@ impl Handler<RegisterDiscordClient> for Controller {
 impl Handler<UnregisterDiscordClient> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, _: UnregisterDiscordClient, _ctx: &mut Context<Self>) {
+        tracing::debug!("Unregister discord client");
         self.discord.take();
     }
 }
@@ -162,7 +187,9 @@ impl Handler<UnregisterDiscordClient> for Controller {
 impl Handler<RegisterDatabaseClient> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: RegisterDatabaseClient, _ctx: &mut Context<Self>) {
+        tracing::debug!("Register database client");
         self.database = Some(message.client);
     }
 }
@@ -170,11 +197,13 @@ impl Handler<RegisterDatabaseClient> for Controller {
 impl Handler<RegisterStatisticsDatabaseController> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(
         &mut self,
         message: RegisterStatisticsDatabaseController,
         _ctx: &mut Context<Self>,
     ) {
+        tracing::debug!("Register statistics database controller");
         self.statistics = Some(message.controller);
     }
 }
@@ -182,11 +211,13 @@ impl Handler<RegisterStatisticsDatabaseController> for Controller {
 impl Handler<GetStatisticsDatabaseController> for Controller {
     type Return = Option<Address<StatisticDatabaseController>>;
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(
         &mut self,
         _message: GetStatisticsDatabaseController,
         _ctx: &mut Context<Self>,
     ) -> Self::Return {
+        tracing::debug!("Get statistics database controller");
         self.statistics.clone()
     }
 }
@@ -194,10 +225,13 @@ impl Handler<GetStatisticsDatabaseController> for Controller {
 impl Handler<IncomingChat> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: IncomingChat, _ctx: &mut Context<Self>) {
-        println!(
-            "[{}] <{}> {}",
-            message.channel, message.sender.name, message.content
+        tracing::info!(
+            channel = message.channel,
+            sender = message.sender.name,
+            content = message.content,
+            "Routing chat (MC->Discord)",
         );
 
         if let Some(discord) = &self.discord {
@@ -215,10 +249,13 @@ impl Handler<IncomingChat> for Controller {
 impl Handler<OutgoingChat> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: OutgoingChat, _ctx: &mut Context<Self>) {
-        println!(
-            "[{}] <@{}> {}",
-            message.channel, message.chat.sender, message.chat.content
+        tracing::info!(
+            channel = message.channel,
+            sender = message.chat.sender,
+            content = message.chat.content,
+            "Routing chat (Discord->MC)",
         );
 
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
@@ -232,10 +269,13 @@ impl Handler<OutgoingChat> for Controller {
 impl Handler<OutgoingCommand> for Controller {
     type Return = bool;
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: OutgoingCommand, _ctx: &mut Context<Self>) -> Self::Return {
-        println!(
-            "[{}] <@{}> /{}",
-            message.channel, message.sender, message.command
+        tracing::info!(
+            channel = message.channel,
+            sender = message.sender,
+            command = message.command,
+            "Routing command (Discord->MC)",
         );
 
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
@@ -257,14 +297,17 @@ impl Handler<OutgoingCommand> for Controller {
 impl Handler<OutgoingServerChange> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(
         &mut self,
         message: OutgoingServerChange,
         _ctx: &mut Context<Self>,
     ) -> Self::Return {
-        println!(
-            "[{}] {} -> {}",
-            message.channel, message.player, message.target_server
+        tracing::info!(
+            channel = message.channel,
+            player = message.player,
+            target_server = message.target_server,
+            "Routing player server transfer",
         );
         if let Some(integrations) = self.integration_clients.get(&message.channel) {
             let _ = integrations
@@ -280,6 +323,7 @@ impl Handler<OutgoingServerChange> for Controller {
 impl Handler<StatusUpdate> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: StatusUpdate, _ctx: &mut Context<Self>) {
         let status = self
             .status_by_channel
@@ -294,11 +338,11 @@ impl Handler<StatusUpdate> for Controller {
             status.players = players;
         }
 
-        println!(
-            "[{}] {} games, {} players",
-            message.channel,
-            status.games.len(),
-            status.players.len()
+        tracing::info!(
+            channel = message.channel,
+            games = status.games.len(),
+            players = status.players.len(),
+            "Routing server status update",
         );
 
         if let Some(discord) = &self.discord {
@@ -327,7 +371,9 @@ impl Handler<StatusUpdate> for Controller {
 impl Handler<PerformanceUpdate> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: PerformanceUpdate, _ctx: &mut Context<Self>) {
+        tracing::info!("Routing server performance update");
         if let Some(database) = &self.database {
             let _ = database
                 .send(database::WritePerformance {
@@ -343,8 +389,9 @@ impl Handler<PerformanceUpdate> for Controller {
 impl Handler<ServerLifecycleStart> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: ServerLifecycleStart, _ctx: &mut Context<Self>) {
-        println!("[{}] started", message.channel);
+        tracing::info!(channel = message.channel, "Routing server started");
 
         if let Some(discord) = &self.discord {
             let _ = discord
@@ -362,6 +409,7 @@ impl Handler<ServerLifecycleStart> for Controller {
         }
 
         if let Some(kickback) = self.config.kickbacks.get(&*message.channel) {
+            tracing::info!(?kickback, "Triggering kickback");
             if let Some(proxy_client) = self.integration_clients.get(&*kickback.proxy_channel) {
                 let _ = proxy_client
                     .send(integrations::OutgoingMessage::SendServerToServer {
@@ -377,8 +425,9 @@ impl Handler<ServerLifecycleStart> for Controller {
 impl Handler<ServerLifecycleStop> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: ServerLifecycleStop, _ctx: &mut Context<Self>) {
-        println!("[{}] stopped", message.channel);
+        tracing::info!(channel = message.channel, "Routing server stopped");
         self.status_by_channel.remove(&message.channel);
 
         if let Some(discord) = &self.discord {
@@ -413,8 +462,9 @@ impl Handler<ServerLifecycleStop> for Controller {
 impl Handler<ServerSystemMessage> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: ServerSystemMessage, _ctx: &mut Context<Self>) {
-        println!("[{}] {}", message.channel, message.content);
+        tracing::info!(channel = message.channel, content = message.content, "Routing system message");
 
         if let Some(discord) = &self.discord {
             let _ = discord
@@ -430,11 +480,13 @@ impl Handler<ServerSystemMessage> for Controller {
 impl Handler<GetStatus> for Controller {
     type Return = Option<ServerStatus>;
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(
         &mut self,
         message: GetStatus,
         _ctx: &mut Context<Self>,
     ) -> Option<ServerStatus> {
+        tracing::info!("Get channel status");
         self.status_by_channel.get(&message.0).cloned()
     }
 }
@@ -442,7 +494,9 @@ impl Handler<GetStatus> for Controller {
 impl Handler<BackendError> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(&mut self, message: BackendError, _ctx: &mut Context<Self>) {
+        tracing::info!("Routing backend error");
         if let Some(discord) = &self.discord {
             let _ = discord
                 .send(ReportError {
@@ -458,11 +512,13 @@ impl Handler<BackendError> for Controller {
 impl Handler<UploadStatsBundle> for Controller {
     type Return = ();
 
+    #[tracing::instrument(skip(self, _ctx))]
     async fn handle(
         &mut self,
         message: UploadStatsBundle,
         _ctx: &mut Context<Self>,
     ) -> Self::Return {
+        tracing::info!("Routing statistics bundle");
         if let Some(statistics) = &self.statistics {
             statistics
                 .send(message)
