@@ -28,9 +28,6 @@ jobs:
             ~/.cargo/git/db/**
             target/**
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        with:
-          path: target/**
-          key: ${{ matrix.os }}-cargo
       - name: Install rust toolchain
         run: rustup update stable && rustup default stable
       - name: Build with cargo
