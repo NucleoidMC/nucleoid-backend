@@ -13,6 +13,7 @@ use super::*;
 //       10 minute time period has passed. That way you cannot hide a ping that you sent.
 
 const REACTION: char = '👋';
+const PING_REACTION: char = '👤';
 
 pub struct StoreKey;
 
@@ -138,8 +139,9 @@ impl Handler {
             .ok_or(CommandError::MustMentionRole)?;
 
         let description = self.parse_description(&message.content).unwrap_or(format!(
-            "Add a {} reaction to register as *looking for players*",
-            REACTION
+            "Add a {} reaction to claim the role.\nAdd a {} reaction to ping all registered players.",
+            REACTION,
+            PING_REACTION
         ));
 
         let register_message = message
@@ -148,7 +150,7 @@ impl Handler {
                 &ctx.http,
                 CreateMessage::new()
                     .content(description)
-                    .reactions(vec![REACTION]),
+                    .reactions(vec![REACTION, PING_REACTION]),
             )
             .await?;
 
@@ -180,11 +182,51 @@ impl Handler {
     pub async fn handle_reaction_add(&self, ctx: &SerenityContext, reaction: Reaction) {
         if let Some(channel) = self.get_channel(ctx, reaction.channel_id).await {
             if let (Some(user), Some(guild_id)) = (reaction.user_id, reaction.guild_id) {
-                if let Err(err) = self.add_registration(ctx, user, guild_id, channel).await {
-                    error!("Failed to add looking-for-player registration: {:?}", err);
-                }
+                if reaction.emoji.unicode_eq("👋") {
+                    if let Err(err) = self.give_role(ctx, user, guild_id, channel).await {
+                        error!("Failed to give looking-for-player role: {:?}", err);
+                    }
+                } else if reaction.emoji.unicode_eq("👤") {
+                    if let Err(err) = self.add_registration(ctx, user, guild_id, channel).await {
+                        error!("Failed to add looking-for-player registration: {:?}", err);
+                    }
+                }  
             }
         }
+    }
+
+    async fn give_role(
+        &self,
+        ctx: &SerenityContext,
+        user: UserId,
+        guild_id: GuildId,
+        channel: Channel,
+    ) -> CommandResult {
+        let member = guild_id.member(&ctx.http, user).await?;
+        if member.user.bot {
+            return Ok(());
+        }
+
+        member.add_role(&ctx.http, channel.role_id).await?;
+
+        Ok(())
+    }
+
+    async fn remove_role(
+        &self,
+        ctx: &SerenityContext,
+        user: UserId,
+        guild_id: GuildId,
+        channel: Channel,
+    ) -> CommandResult {
+        let member = guild_id.member(&ctx.http, user).await?;
+        if member.user.bot {
+            return Ok(());
+        }
+
+        member.remove_role(&ctx.http, channel.role_id).await?;
+
+        Ok(())
     }
 
     async fn add_registration(
@@ -198,8 +240,6 @@ impl Handler {
         if member.user.bot {
             return Ok(());
         }
-
-        member.add_role(&ctx.http, channel.role_id).await?;
 
         let mut data = ctx.data.write().await;
         let store = data.get_mut::<StoreKey>().unwrap();
@@ -254,14 +294,23 @@ impl Handler {
     pub async fn handle_reaction_remove(&self, ctx: &SerenityContext, reaction: Reaction) {
         if let Some(channel) = self.get_channel(ctx, reaction.channel_id).await {
             if let (Some(user), Some(guild_id)) = (reaction.user_id, reaction.guild_id) {
-                if let Err(err) = self
-                    .remove_registration(ctx, user, reaction.channel_id, guild_id, channel)
-                    .await
-                {
-                    error!(
-                        "Failed to remove looking-for-player registration: {:?}",
-                        err
-                    );
+                if reaction.emoji.unicode_eq("👋") {
+                    if let Err(err) = self
+                        .remove_role(ctx, user, guild_id, channel)
+                        .await
+                    {
+                        error!("Failed to remove looking-for-player role: {:?}", err);
+                    }
+                } else if reaction.emoji.unicode_eq("👤") {
+                    if let Err(err) = self
+                        .remove_registration(ctx, user, reaction.channel_id, guild_id, channel)
+                        .await
+                    {
+                        error!(
+                            "Failed to remove looking-for-player registration: {:?}",
+                            err
+                        );
+                    }
                 }
             }
         }
